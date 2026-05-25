@@ -43,3 +43,27 @@ export const meta = {
 export const ai = {
   ask: (feature, prompt, context) => call('ai-deby', { feature, prompt, context }),
 }
+
+// --- Google Drive ---
+export const drive = {
+  // Redireciona o browser para a tela de autorização OAuth do Google
+  startAuth: () => { window.location.href = '/.netlify/functions/google-drive-auth' },
+
+  createClientFolder: (clientId, clientName) =>
+    call('drive-create-client-folder', { clientId, clientName }),
+
+  createVideoProject: (clientId, clientName, title, recordingDate, notes) =>
+    call('drive-create-video-project', { clientId, clientName, title, recordingDate, notes }),
+
+  // Retorna um upload_uri para o frontend fazer PUT direto no Drive (sem expor o access_token)
+  getRawUploadUrl: (videoProjectId, rawFolderId, fileName, mimeType) =>
+    call('drive-upload-raw-files', { videoProjectId, rawFolderId, fileName, mimeType }),
+
+  getFinalUploadUrl: (videoProjectId, finalFolderId, fileName, mimeType) =>
+    call('drive-upload-final-file', { videoProjectId, finalFolderId, fileName, mimeType }),
+
+  saveFile: (meta) => call('drive-save-file', meta),
+
+  updateProjectStatus: (videoProjectId, status) =>
+    call('drive-save-file', { videoProjectId, status, _statusOnly: true }),
+}

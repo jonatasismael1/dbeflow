@@ -10,10 +10,14 @@ import {
   ClipboardCheck,
   Copy,
   Download,
+  ExternalLink,
   Eye,
   FileSignature,
   FileText,
+  Film,
+  FolderOpen,
   Gauge,
+  HardDrive,
   LayoutDashboard,
   Megaphone,
   MessageCircle,
@@ -38,8 +42,8 @@ import { format } from 'date-fns'
 import './styles.css'
 import logo from './assets/logo-dbe.png'
 import { isSupabaseConfigured } from './lib/supabase'
-import { loadAll, insertItem, saveItem, deleteItem } from './lib/db'
-import { whatsapp, meta, ai, contract } from './lib/api'
+import { loadAll, insertItem, saveItem, deleteItem, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
+import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v1'
 
@@ -55,6 +59,7 @@ const nav = [
   { id: 'ai', label: 'Deby AI', icon: Sparkles },
   { id: 'instagram', label: 'Instagram', icon: Camera },
   { id: 'conversas', label: 'Conversas', icon: MessageCircle },
+  { id: 'producao', label: 'Produção', icon: Film },
   { id: 'financeiro', label: 'Financeiro', icon: WalletCards },
   { id: 'integracoes', label: 'Integrações', icon: Settings },
 ]
@@ -104,6 +109,15 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const isPublicDiagnostic = new URLSearchParams(window.location.search).get('diagnostico') === 'publico'
+
+  // Lida com redirect do callback OAuth do Google Drive
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('tab') === 'integracoes') {
+      setActive('integracoes')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   // Carrega os dados (nuvem se Supabase configurado; senão localStorage)
   useEffect(() => {
@@ -225,6 +239,7 @@ function App() {
         {active === 'ai' && <DebyAI state={state} />}
         {active === 'instagram' && <InstagramStudio state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
+        {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
         {active === 'financeiro' && <Financeiro state={state} addItem={addItem} updateItem={updateItem} metrics={metrics} />}
         {active === 'integracoes' && <Integracoes />}
       </main>
@@ -1154,12 +1169,272 @@ function Financeiro({ state, addItem, updateItem, metrics }) {
   )
 }
 
+function ProducaoVideo({ state, updateItem }) {
+  const [driveConn, setDriveConn] = useState(undefined) // undefined=loading, null=sem conta
+  const [selectedClientName, setSelectedClientName] = useState(state.clients[0]?.name || '')
+  const [projects, setProjects] = useState([])
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [projectFiles, setProjectFiles] = useState([])
+  const [showNewProject, setShowNewProject] = useState(false)
+  const [newForm, setNewForm] = useState({ title: '', recordingDate: '', notes: '' })
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const rawInputRef = useRef(null)
+  const finalInputRef = useRef(null)
+
+  const selectedClient = state.clients.find((c) => c.name === selectedClientName)
+  const hasDriveFolder = Boolean(selectedClient?.drive_folder_id)
+
+  const STATUS_LABELS = {
+    gravado: 'Gravado', brutos_enviados: 'Brutos enviados', em_edicao: 'Em edição',
+    revisao: 'Revisão', aprovado: 'Aprovado', publicado: 'Publicado', arquivado: 'Arquivado',
+  }
+  const STATUS_FLOW = ['gravado','brutos_enviados','em_edicao','revisao','aprovado','publicado','arquivado']
+  const statusTone = (s) => ({ gravado:'gold', brutos_enviados:'blue', em_edicao:'blue', revisao:'gold', aprovado:'success', publicado:'success', arquivado:'default' }[s] || 'default')
+
+  useEffect(() => { loadDriveIntegration().then(setDriveConn) }, [])
+  useEffect(() => {
+    if (!selectedClient?.id) { setProjects([]); return }
+    loadVideoProjects(selectedClient.id).then(setProjects)
+    setSelectedProject(null); setProjectFiles([])
+  }, [selectedClient?.id])
+  useEffect(() => {
+    if (!selectedProject?.id) { setProjectFiles([]); return }
+    loadVideoProjectFiles(selectedProject.id).then(setProjectFiles)
+  }, [selectedProject?.id])
+
+  const msg = (text) => setFeedback(text)
+
+  const handleCreateFolder = async () => {
+    if (!selectedClient) return
+    setBusy(true); msg('Criando pasta no Drive...')
+    const res = await drive.createClientFolder(selectedClient.id, selectedClient.name)
+    setBusy(false)
+    if (res.ok) {
+      updateItem('clients', selectedClient.id, { ...selectedClient, drive_folder_id: res.folderId, drive_folder_url: res.folderUrl })
+      msg('✅ Pasta criada no Drive!')
+    } else msg(`❌ ${res.error}`)
+  }
+
+  const handleCreateProject = async () => {
+    if (!selectedClient || !newForm.title) return
+    setBusy(true); msg('Criando projeto e pastas no Drive...')
+    const res = await drive.createVideoProject(selectedClient.id, selectedClient.name, newForm.title, newForm.recordingDate || null, newForm.notes || null)
+    setBusy(false)
+    if (res.ok) {
+      setProjects((prev) => [res.project, ...prev])
+      setSelectedProject(res.project)
+      setShowNewProject(false)
+      setNewForm({ title: '', recordingDate: '', notes: '' })
+      msg('✅ Projeto criado: 01-Brutos / 02-Projeto / 03-Final')
+    } else msg(`❌ ${res.error}`)
+  }
+
+  const doUpload = async (fileList, category) => {
+    if (!selectedProject || !fileList?.length) return
+    for (const file of Array.from(fileList)) {
+      msg(`Preparando ${file.name}...`)
+      const folderId = category === 'final' ? selectedProject.final_folder_id : selectedProject.raw_folder_id
+      const urlRes = category === 'final'
+        ? await drive.getFinalUploadUrl(selectedProject.id, folderId, file.name, file.type)
+        : await drive.getRawUploadUrl(selectedProject.id, folderId, file.name, file.type)
+      if (!urlRes.ok) { msg(`❌ ${urlRes.error}`); continue }
+      msg(`Enviando ${file.name} para o Google Drive...`)
+      try {
+        const uploadRes = await fetch(urlRes.upload_uri, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        })
+        if (!uploadRes.ok) throw new Error(`Google Drive HTTP ${uploadRes.status}`)
+        const driveFile = await uploadRes.json()
+        const saveRes = await drive.saveFile({ videoProjectId: selectedProject.id, driveFileId: driveFile.id, driveFolderId: folderId, fileName: file.name, mimeType: file.type, fileSize: file.size, category })
+        if (saveRes.ok) {
+          setProjectFiles((prev) => [saveRes.file, ...prev])
+          const nextStatus = category === 'final' ? 'revisao' : (selectedProject.status === 'gravado' ? 'brutos_enviados' : selectedProject.status)
+          if (nextStatus !== selectedProject.status) {
+            setSelectedProject((p) => ({ ...p, status: nextStatus }))
+            setProjects((prev) => prev.map((p) => p.id === selectedProject.id ? { ...p, status: nextStatus } : p))
+          }
+          msg(`✅ ${file.name} enviado!`)
+        }
+      } catch (err) { msg(`❌ Erro: ${err.message}`) }
+    }
+  }
+
+  const advanceStatus = async (project) => {
+    const idx = STATUS_FLOW.indexOf(project.status)
+    if (idx < 0 || idx >= STATUS_FLOW.length - 1) return
+    const next = STATUS_FLOW[idx + 1]
+    await updateVideoProject(project.id, { status: next })
+    setProjects((prev) => prev.map((p) => p.id === project.id ? { ...p, status: next } : p))
+    if (selectedProject?.id === project.id) setSelectedProject((p) => ({ ...p, status: next }))
+    msg(`✅ Status: ${STATUS_LABELS[next]}`)
+  }
+
+  const brutos = projectFiles.filter((f) => f.category === 'bruto')
+  const finais = projectFiles.filter((f) => f.category === 'final')
+
+  if (driveConn === undefined) return <section className="page-grid"><Panel title="Produção de Vídeo"><p className="muted-note">Carregando...</p></Panel></section>
+
+  if (!driveConn) return (
+    <section className="page-grid">
+      <Panel title="Google Drive não conectado">
+        <p className="muted-note">Conecte sua conta Google para criar pastas por cliente, organizar projetos de vídeo e enviar arquivos diretamente para o Drive.</p>
+        <div style={{ marginTop: 12 }}>
+          <button className="primary" onClick={() => drive.startAuth()}><HardDrive size={16} /> Conectar Google Drive</button>
+        </div>
+      </Panel>
+    </section>
+  )
+
+  return (
+    <section className="page-grid">
+      <div className="grid-3">
+        <MiniStat label="Drive conectado" value={driveConn.google_account_email || '—'} tone="success" />
+        <MiniStat label="Projetos do cliente" value={projects.length} tone="blue" />
+        <MiniStat label="Arquivos no projeto" value={projectFiles.length} tone="gold" />
+      </div>
+
+      <div className="grid-2 align-start">
+        <div>
+          <Panel title="Cliente">
+            <div className="form-grid">
+              <Select label="Cliente" value={selectedClientName}
+                onChange={(n) => { setSelectedClientName(n); setSelectedProject(null) }}
+                options={state.clients.map((c) => c.name)} />
+              {selectedClient && !hasDriveFolder && (
+                <button className="primary" onClick={handleCreateFolder} disabled={busy}>
+                  <FolderOpen size={16} /> Criar pasta no Drive
+                </button>
+              )}
+              {selectedClient?.drive_folder_url && (
+                <a href={selectedClient.drive_folder_url} target="_blank" rel="noreferrer"
+                  className="secondary" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+                  <ExternalLink size={14} /> Abrir pasta do cliente
+                </a>
+              )}
+              {feedback && <p className="muted-note" style={{ marginTop: 4 }}>{feedback}</p>}
+            </div>
+          </Panel>
+
+          <Panel title="Projetos de vídeo" action={hasDriveFolder ? '+ Novo' : ''} onAction={() => setShowNewProject(true)}>
+            {showNewProject && (
+              <div className="form-grid" style={{ marginBottom:16, paddingBottom:16, borderBottom:'1px solid var(--border)' }}>
+                <Input label="Título do vídeo" value={newForm.title} onChange={(title) => setNewForm({ ...newForm, title })} />
+                <Input label="Data de gravação" type="date" value={newForm.recordingDate} onChange={(recordingDate) => setNewForm({ ...newForm, recordingDate })} />
+                <label className="field"><span>Notas</span><textarea className="textarea" value={newForm.notes} onChange={(e) => setNewForm({ ...newForm, notes: e.target.value })} /></label>
+                <div className="button-row">
+                  <button className="primary" onClick={handleCreateProject} disabled={busy || !newForm.title}><Film size={16} /> {busy ? 'Criando...' : 'Criar'}</button>
+                  <button className="secondary" onClick={() => setShowNewProject(false)}>Cancelar</button>
+                </div>
+              </div>
+            )}
+            {projects.length === 0
+              ? <p className="muted-note">{hasDriveFolder ? 'Nenhum projeto. Clique em "+ Novo".' : 'Crie a pasta do cliente primeiro.'}</p>
+              : projects.map((p) => (
+                  <div key={p.id} className={`list-item${selectedProject?.id === p.id ? ' active' : ''}`} style={{ cursor:'pointer' }} onClick={() => setSelectedProject(p)}>
+                    <div>
+                      <strong>{p.title}</strong>
+                      {p.recording_date && <small> · {p.recording_date}</small>}
+                    </div>
+                    <div className="button-row compact" style={{ alignItems:'center' }}>
+                      <Badge text={STATUS_LABELS[p.status] || p.status} tone={statusTone(p.status)} />
+                      {p.drive_folder_url && (
+                        <a href={p.drive_folder_url} target="_blank" rel="noreferrer"
+                          style={{ color:'var(--accent)', fontSize:12, display:'flex', gap:3 }}
+                          onClick={(e) => e.stopPropagation()}>
+                          <ExternalLink size={12} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))
+            }
+          </Panel>
+        </div>
+
+        {selectedProject ? (
+          <Panel title={selectedProject.title}>
+            <ActionList items={[
+              ['Cliente', selectedProject.client_name || '—'],
+              ['Status', STATUS_LABELS[selectedProject.status] || selectedProject.status],
+              ['Gravação', selectedProject.recording_date || '—'],
+            ]} />
+            <div className="button-row" style={{ marginTop: 8 }}>
+              {selectedProject.drive_folder_url && (
+                <a href={selectedProject.drive_folder_url} target="_blank" rel="noreferrer" className="secondary" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+                  <ExternalLink size={14} /> Pasta no Drive
+                </a>
+              )}
+              <button className="secondary" onClick={() => advanceStatus(selectedProject)} disabled={busy}>
+                <Check size={14} /> Avançar status
+              </button>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ fontSize:13, fontWeight:600, marginBottom:8 }}>Brutos ({brutos.length})</h3>
+              {brutos.length === 0
+                ? <p className="muted-note">Nenhum arquivo bruto enviado.</p>
+                : brutos.map((f) => (
+                    <div key={f.id} className="list-item" style={{ fontSize:13 }}>
+                      <span>{f.file_name}{f.file_size ? ` · ${(f.file_size/1024/1024).toFixed(1)} MB` : ''}</span>
+                      {f.file_url && <a href={f.file_url} target="_blank" rel="noreferrer" style={{ color:'var(--accent)' }}><ExternalLink size={12} /></a>}
+                    </div>
+                  ))
+              }
+              <input ref={rawInputRef} type="file" multiple accept="video/*,image/*,audio/*" style={{ display:'none' }}
+                onChange={(e) => doUpload(e.target.files, 'bruto')} />
+              <button className="secondary" style={{ marginTop:8 }} onClick={() => rawInputRef.current?.click()} disabled={busy}>
+                <UploadCloud size={14} /> Enviar brutos
+              </button>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ fontSize:13, fontWeight:600, marginBottom:8 }}>Final ({finais.length})</h3>
+              {finais.length === 0
+                ? <p className="muted-note">Nenhum arquivo final enviado.</p>
+                : finais.map((f) => (
+                    <div key={f.id} className="list-item" style={{ fontSize:13 }}>
+                      <span>{f.file_name}{f.file_size ? ` · ${(f.file_size/1024/1024).toFixed(1)} MB` : ''}</span>
+                      {f.file_url && <a href={f.file_url} target="_blank" rel="noreferrer" style={{ color:'var(--accent)' }}><ExternalLink size={12} /></a>}
+                    </div>
+                  ))
+              }
+              <input ref={finalInputRef} type="file" accept="video/*" style={{ display:'none' }}
+                onChange={(e) => doUpload(e.target.files, 'final')} />
+              <button className="secondary" style={{ marginTop:8 }} onClick={() => finalInputRef.current?.click()} disabled={busy}>
+                <UploadCloud size={14} /> Enviar final
+              </button>
+            </div>
+          </Panel>
+        ) : (
+          <Panel title="Selecione um projeto">
+            <p className="muted-note">Selecione um projeto de vídeo ao lado para ver detalhes, enviar arquivos e avançar o status.</p>
+          </Panel>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function Integracoes() {
   const [waState, setWaState] = useState('—')
   const [qr, setQr] = useState('')
   const [busy, setBusy] = useState(false)
   const [igAccounts, setIgAccounts] = useState(null)
   const [igMsg, setIgMsg] = useState('')
+  const [driveConn, setDriveConn] = useState(null)
+  const [driveMsg, setDriveMsg] = useState('')
+
+  useEffect(() => {
+    loadDriveIntegration().then(setDriveConn)
+    // Mostra feedback do callback OAuth se houver parâmetros na URL
+    const params = new URLSearchParams(window.location.search)
+    const ds = params.get('drive_status')
+    const dm = params.get('msg')
+    if (ds) setDriveMsg(ds === 'ok' ? `✅ ${decodeURIComponent(dm || 'Conectado!')}` : `❌ ${decodeURIComponent(dm || 'Erro')}`)
+  }, [])
 
   const checkWa = async () => {
     setBusy(true)
@@ -1184,6 +1459,7 @@ function Integracoes() {
 
   const items = [
     ['Supabase', 'Banco de dados na nuvem (clientes, leads, roteiros, financeiro...)', isSupabaseConfigured ? 'Conectado' : 'Local', isSupabaseConfigured ? 'success' : 'gold'],
+    ['Google Drive', 'Pastas por cliente, projetos de vídeo, upload de brutos e finais', driveConn ? driveConn.google_account_email : 'Desconectado', driveConn ? 'success' : 'gold'],
     ['OpenRouter (Deby AI)', 'Geração de roteiros, legendas e análises', 'Servidor', 'blue'],
     ['Meta/Instagram', 'Contas, insights e publicação', 'Servidor', 'blue'],
     ['WhatsApp / Evolution', 'Envio e recebimento de mensagens', waState, waState === 'open' ? 'success' : 'gold'],
@@ -1203,6 +1479,27 @@ function Integracoes() {
       </div>
 
       <div className="grid-2 align-start">
+        <Panel title="Google Drive (produção de vídeo)">
+          {driveConn ? (
+            <>
+              <p className="muted-note">Conectado como <strong>{driveConn.google_account_email}</strong>.</p>
+              <p className="muted-note">Pasta raiz: <code>1-rHJ3bfsx4mvG6xXTpKiCtn1a1_R1Gg0</code></p>
+              <div className="button-row" style={{ marginTop: 8 }}>
+                <button className="secondary" onClick={() => drive.startAuth()}><RefreshCw size={16} /> Reconectar</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="muted-note">Conecte uma conta Google para organizar a produção de vídeos por cliente. O acesso é limitado ao escopo <code>drive.file</code> — apenas arquivos criados pelo app.</p>
+              <p className="muted-note" style={{ color: 'var(--warning, #f59e0b)', marginTop: 4 }}>⚠️ Certifique-se de configurar <strong>GOOGLE_CLIENT_SECRET</strong> nas variáveis de ambiente da Netlify antes de conectar.</p>
+              <button className="primary" style={{ marginTop: 8 }} onClick={() => drive.startAuth()}>
+                <HardDrive size={16} /> Conectar Google Drive
+              </button>
+            </>
+          )}
+          {driveMsg && <p className="muted-note" style={{ marginTop: 8 }}>{driveMsg}</p>}
+        </Panel>
+
         <Panel title="Conectar WhatsApp">
           <p className="muted-note">Clique em conectar e escaneie o QR code com o WhatsApp do número da agência (Aparelhos conectados).</p>
           <div className="button-row">
@@ -1212,28 +1509,29 @@ function Integracoes() {
           <p className="muted-note">Status atual: <strong>{waState}</strong></p>
           {qr && <img src={qr} alt="QR Code WhatsApp" style={{ width: 240, height: 240, marginTop: 12, borderRadius: 12, background: '#fff', padding: 8 }} />}
         </Panel>
-
-        <Panel title="Meta / Instagram">
-          <p className="muted-note">Lista as contas do Instagram disponíveis no token configurado.</p>
-          <button className="secondary" onClick={checkMeta}><Camera size={16} /> Buscar contas</button>
-          {igMsg && <p className="muted-note">{igMsg}</p>}
-          {igAccounts && (
-            <div className="stack-list" style={{ marginTop: 12 }}>
-              {igAccounts.length ? igAccounts.map((a) => (
-                <ListItem key={a.id} title={a.name} meta={a.instagram_business_account ? `IG: @${a.instagram_business_account.username} · ${a.instagram_business_account.followers_count || 0} seguidores` : 'Sem conta IG vinculada'} badge={a.instagram_business_account ? 'IG' : 'Página'} />
-              )) : <div className="empty-box">Nenhuma página/conta encontrada no token.</div>}
-            </div>
-          )}
-        </Panel>
       </div>
 
-      <Panel title="Checklist para colocar online (deploy)">
+      <Panel title="Meta / Instagram">
+        <p className="muted-note">Lista as contas do Instagram disponíveis no token configurado.</p>
+        <button className="secondary" onClick={checkMeta}><Camera size={16} /> Buscar contas</button>
+        {igMsg && <p className="muted-note">{igMsg}</p>}
+        {igAccounts && (
+          <div className="stack-list" style={{ marginTop: 12 }}>
+            {igAccounts.length ? igAccounts.map((a) => (
+              <ListItem key={a.id} title={a.name} meta={a.instagram_business_account ? `IG: @${a.instagram_business_account.username} · ${a.instagram_business_account.followers_count || 0} seguidores` : 'Sem conta IG vinculada'} badge={a.instagram_business_account ? 'IG' : 'Página'} />
+            )) : <div className="empty-box">Nenhuma página/conta encontrada no token.</div>}
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="Checklist para deploy (Netlify)">
         <ActionList
           items={[
-            ['Banco Supabase', isSupabaseConfigured ? 'Conectado ao projeto DBE-flow ✅' : 'Preencher VITE_SUPABASE_* no .env'],
-            ['Deploy Netlify', 'Subir a pasta dbe-flow e cadastrar as variáveis do .env no painel'],
-            ['Webhook do WhatsApp', 'Apontar a instância Evolution para /api/whatsapp-webhook do site'],
+            ['Supabase', isSupabaseConfigured ? 'Conectado ao projeto DBE-flow ✅' : 'Preencher VITE_SUPABASE_* no .env'],
+            ['Google Drive', driveConn ? `Conectado: ${driveConn.google_account_email} ✅` : 'Configurar GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET na Netlify e conectar'],
+            ['WhatsApp webhook', 'Apontar instância Evolution para /api/whatsapp-webhook do site'],
             ['Instagram', 'Confirmar token de acesso e conta IG business vinculada'],
+            ['OAUTH_STATE_SECRET', 'Gerar string aleatória e configurar na Netlify (segurança OAuth)'],
           ]}
         />
       </Panel>

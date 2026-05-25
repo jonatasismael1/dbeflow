@@ -93,3 +93,41 @@ export async function loadMessages(remoteJid) {
     .from('wa_messages').select('*').eq('remote_jid', remoteJid).order('ts', { ascending: true }).limit(500)
   return data || []
 }
+
+// ===========================================================================
+// Produção de vídeo (Google Drive)
+// ===========================================================================
+export async function loadVideoProjects(clientId) {
+  if (!isSupabaseConfigured) return []
+  const { data } = await supabase
+    .from('video_projects')
+    .select('*')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+  return data || []
+}
+
+export async function loadVideoProjectFiles(videoProjectId) {
+  if (!isSupabaseConfigured) return []
+  const { data } = await supabase
+    .from('video_project_files')
+    .select('*')
+    .eq('video_project_id', videoProjectId)
+    .order('created_at', { ascending: false })
+  return data || []
+}
+
+export async function updateVideoProject(id, patch) {
+  if (!isSupabaseConfigured) return
+  const { error } = await supabase.from('video_projects').update(patch).eq('id', id)
+  if (error) console.warn('[db] updateVideoProject', error.message)
+}
+
+export async function loadDriveIntegration() {
+  if (!isSupabaseConfigured) return null
+  const { data } = await supabase
+    .from('google_drive_integrations')
+    .select('google_account_email, status, connected_at, root_folder_id')
+    .limit(1)
+  return data?.[0] ?? null
+}
