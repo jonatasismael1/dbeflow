@@ -241,7 +241,7 @@ function App() {
         {active === 'conteudo' && <Conteudo state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'cronograma' && <CronogramaConteudo state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'teleprompter' && <Teleprompter scripts={state.scripts} />}
-        {active === 'ai' && <DebyAI state={state} addItem={addItem} />}
+        {active === 'ai' && <DebyAI state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'instagram' && <InstagramStudio state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
         {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
@@ -1074,6 +1074,8 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(() => emptyContentForm(state.clients))
+  const [driveFeedback, setDriveFeedback] = useState('')
+  const contentFileInputRef = useRef(null)
 
   const visibleClients = state.clients.filter((client) => filters.archived || !isArchivedClient(client))
   const allContent = state.scripts.map((item) => normalizeContentItem(item, state.clients))
@@ -1088,12 +1090,14 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
   const openNew = (client) => {
     setEditing(null)
     setForm(emptyContentForm(state.clients, client))
+    setDriveFeedback('')
     setModalOpen(true)
   }
 
   const openEdit = (item) => {
     setEditing(item)
     setForm({ ...emptyContentForm(state.clients), ...item })
+    setDriveFeedback('')
     setModalOpen(true)
   }
 
@@ -1101,6 +1105,7 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
     if (!form.title) return
     const client = state.clients.find((item) => item.id === form.client_id) || state.clients.find((item) => item.name === form.client)
     const now = new Date().toISOString()
+    let shouldClose = true
     const payload = {
       ...form,
       client_id: client?.id || form.client_id || '',
@@ -1108,9 +1113,84 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
       source: form.source || (editing ? editing.source : 'cronograma'),
       updatedAt: now,
     }
+    let saved = editing?.id ? { ...payload, id: editing.id } : null
     if (editing?.id) updateItem('scripts', editing.id, payload)
-    else await addItem('scripts', { ...payload, createdAt: now })
-    setModalOpen(false)
+    else saved = await addItem('scripts', { ...payload, createdAt: now })
+
+    if (payload.format === 'Roteiro de Reels' && client?.id && saved?.id) {
+      setDriveFeedback('Criando pasta do roteiro no Drive...')
+      const folderRes = await drive.createContentFolder(saved.id, client.id, client.name, payload.title)
+      if (folderRes.ok) {
+        const nextPayload = {
+          ...payload,
+          drive_folder_id: folderRes.folderId,
+          drive_folder_url: folderRes.folderUrl,
+          updatedAt: new Date().toISOString(),
+        }
+        updateItem('scripts', saved.id, nextPayload)
+        setDriveFeedback('Pasta do roteiro criada/vinculada no Drive.')
+      } else setDriveFeedback(`Erro ao criar pasta no Drive: ${folderRes.error}`)
+      if (!folderRes.ok) shouldClose = false
+    }
+    if (shouldClose) setModalOpen(false)
+  }
+
+  const ensureContentFolder = async () => {
+    const client = state.clients.find((item) => item.id === form.client_id) || state.clients.find((item) => item.name === form.client)
+    if (!editing?.id || !client?.id || !form.title) return null
+    if (form.drive_folder_id) return { folderId: form.drive_folder_id, folderUrl: form.drive_folder_url }
+    setDriveFeedback('Criando pasta do roteiro no Drive...')
+    const res = await drive.createContentFolder(editing.id, client.id, client.name, form.title)
+    if (!res.ok) {
+      setDriveFeedback(`Erro ao criar pasta no Drive: ${res.error}`)
+      return null
+    }
+    const patch = { ...form, drive_folder_id: res.folderId, drive_folder_url: res.folderUrl, updatedAt: new Date().toISOString() }
+    setForm(patch)
+    updateItem('scripts', editing.id, patch)
+    setDriveFeedback('Pasta do roteiro pronta no Drive.')
+    return res
+  }
+
+  const uploadContentFiles = async (fileList) => {
+    if (!editing?.id || !fileList?.length) return
+    const folder = await ensureContentFolder()
+    const folderId = folder?.folderId || form.drive_folder_id
+    if (!folderId) return
+
+    const uploaded = []
+    for (const file of Array.from(fileList)) {
+      setDriveFeedback(`Preparando ${file.name}...`)
+      const urlRes = await drive.getContentUploadUrl(editing.id, folderId, file.name, file.type)
+      if (!urlRes.ok) { setDriveFeedback(`Erro ao preparar upload: ${urlRes.error}`); continue }
+      setDriveFeedback(`Enviando ${file.name} para o Drive...`)
+      try {
+        const uploadRes = await fetch(urlRes.upload_uri, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        })
+        if (!uploadRes.ok) throw new Error(`Google Drive HTTP ${uploadRes.status}`)
+        const driveFile = await uploadRes.json()
+        uploaded.push({
+          id: driveFile.id,
+          name: file.name,
+          mimeType: file.type,
+          size: file.size,
+          url: `https://drive.google.com/file/d/${driveFile.id}/view`,
+          uploadedAt: new Date().toISOString(),
+        })
+      } catch (err) {
+        setDriveFeedback(`Erro ao enviar ${file.name}: ${err.message}`)
+      }
+    }
+    if (uploaded.length) {
+      const nextFiles = [...normalizeMediaFiles(form.media_files), ...uploaded]
+      const patch = { ...form, media_files: nextFiles, status: form.status === 'Ideia' ? 'A produzir' : form.status, updatedAt: new Date().toISOString() }
+      setForm(patch)
+      updateItem('scripts', editing.id, patch)
+      setDriveFeedback(`${uploaded.length} arquivo(s) enviado(s) para a pasta do roteiro.`)
+    }
   }
 
   return (
@@ -1208,8 +1288,31 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
             </label>
             <label className="field span">
               <span>Arquivos e mídia</span>
-              <textarea className="textarea" value={form.media_files || ''} onChange={(event) => setForm({ ...form, media_files: event.target.value })} placeholder="Cole links do Drive, referências ou nomes de arquivos." />
+              <textarea className="textarea" value={mediaFilesToText(form.media_files)} onChange={(event) => setForm({ ...form, media_files: event.target.value })} placeholder="Cole links do Drive, referências ou nomes de arquivos." />
             </label>
+            {form.format === 'Roteiro de Reels' && (
+              <div className="drive-content-tools span">
+                <div>
+                  <strong>Pasta do roteiro no Drive</strong>
+                  <span>{form.drive_folder_url ? 'Pasta vinculada. Os arquivos enviados entram nela.' : 'Ao salvar, a pasta será criada dentro da pasta do cliente.'}</span>
+                </div>
+                <div className="button-row compact no-margin">
+                  {form.drive_folder_url && (
+                    <a className="secondary" href={form.drive_folder_url} target="_blank" rel="noreferrer">
+                      <ExternalLink size={14} /> Abrir pasta
+                    </a>
+                  )}
+                  {editing?.id && (
+                    <>
+                      <button className="secondary" onClick={ensureContentFolder}><FolderOpen size={14} /> Garantir pasta</button>
+                      <button className="primary" onClick={() => contentFileInputRef.current?.click()}><UploadCloud size={14} /> Adicionar arquivos</button>
+                      <input ref={contentFileInputRef} type="file" multiple accept="video/*,image/*,audio/*" style={{ display:'none' }} onChange={(event) => uploadContentFiles(event.target.files)} />
+                    </>
+                  )}
+                </div>
+                {driveFeedback && <p className="muted-note">{driveFeedback}</p>}
+              </div>
+            )}
             <label className="field span">
               <span>Observações internas</span>
               <textarea className="textarea" value={form.notes || ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
@@ -1279,7 +1382,7 @@ function Teleprompter({ scripts }) {
   )
 }
 
-function DebyAI({ state, addItem }) {
+function DebyAI({ state, addItem, updateItem }) {
   const [input, setInput] = useState('Gerar roteiro para um médico que trava na câmera e precisa atrair paciente particular.')
   const [feature, setFeature] = useState('roteiro')
   const [output, setOutput] = useState('')
@@ -1312,7 +1415,7 @@ function DebyAI({ state, addItem }) {
     const client = state.clients.find((item) => item.id === saveForm.client_id) || state.clients[0]
     if (!client || !saveForm.title) return
     const now = new Date().toISOString()
-    await addItem('scripts', {
+    const record = await addItem('scripts', {
       client_id: client.id,
       client: client.name,
       title: saveForm.title,
@@ -1326,6 +1429,17 @@ function DebyAI({ state, addItem }) {
       createdAt: now,
       updatedAt: now,
     })
+    if (saveForm.format === 'Roteiro de Reels') {
+      const folderRes = await drive.createContentFolder(record.id, client.id, client.name, saveForm.title)
+      if (folderRes.ok) {
+        updateItem('scripts', record.id, {
+          ...record,
+          drive_folder_id: folderRes.folderId,
+          drive_folder_url: folderRes.folderUrl,
+          updatedAt: new Date().toISOString(),
+        })
+      }
+    }
     setSaveForm({ ...saveForm, title: '' })
   }
 
@@ -2463,6 +2577,31 @@ function driveItemMeta(item) {
   const size = item.size ? ` · ${(Number(item.size) / 1024 / 1024).toFixed(1)} MB` : ''
   const modified = item.modifiedTime ? ` · ${dateTime(item.modifiedTime)}` : ''
   return `${type}${size}${modified}`
+}
+
+function normalizeMediaFiles(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return parsed
+    } catch {}
+    return value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => ({ name: line, url: line.startsWith('http') ? line : '' }))
+  }
+  return []
+}
+
+function mediaFilesToText(value) {
+  if (!value) return ''
+  if (Array.isArray(value)) {
+    return value.map((file) => file.url ? `${file.name || file.url} - ${file.url}` : (file.name || '')).filter(Boolean).join('\n')
+  }
+  return String(value)
 }
 
 function copyText(text) {

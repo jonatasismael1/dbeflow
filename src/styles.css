@@ -818,6 +818,21 @@ td small {
   font-size: 12px;
 }
 
+.drive-content-tools {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(59,143,232,.06);
+  padding: 12px;
+}
+
+.drive-content-tools span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .button-row {
   display: flex;
   gap: 10px;

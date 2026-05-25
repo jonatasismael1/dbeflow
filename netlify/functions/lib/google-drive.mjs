@@ -130,6 +130,20 @@ export async function createDriveFolder(name, parentId, token = null) {
   return data
 }
 
+export async function findDriveFolderByName(name, parentId, token = null) {
+  const safeName = String(name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  const params = new URLSearchParams({
+    q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${safeName}' and trashed = false`,
+    fields: 'files(id,name,webViewLink)',
+    pageSize: '1',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+  })
+  const { ok, data } = await driveReq(`/files?${params}`, {}, token)
+  if (!ok) return null
+  return data.files?.[0] || null
+}
+
 // Concede leitura pública para qualquer pessoa com o link
 export async function setPublicRead(fileId, token = null) {
   const accessToken = token ?? (await getValidToken())
