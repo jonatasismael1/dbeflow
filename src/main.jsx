@@ -2219,6 +2219,693 @@ function ContactAvatar({ contact }) {
   const initials = (contact?.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
   return <div className="chat-avatar" style={{fontSize:14}}>{initials}</div>
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// FINANCEIRO COMPLETO — porta fiel do app financeiro com 7 abas
+// ═══════════════════════════════════════════════════════════════════════════
+const FIN_API = 'https://script.google.com/macros/s/AKfycbwz_1t5DSowR5t3KAAIVwam4sKy2DSTgTsbv62uaYBGvkqDZfYxpjX6su89iSDR0HoV/exec'
+const FIN_MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+const FIN_REC_CATS = ['Receitas com Clientes Pacotes','Receitas com Serviços Avulsos']
+
+function finFmt(v, dec = 2) {
+  const n = Math.round(v * 100) / 100
+  return (n < 0 ? '- ' : '') + 'R$ ' + Math.abs(n).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
+}
+function finShort(v) {
+  const a = Math.abs(v)
+  if (a >= 1000) return (v < 0 ? '-' : '') + 'R$ ' + (a / 1000).toFixed(1) + 'k'
+  return finFmt(v)
+}
+function finDate(d) {
+  if (!d) return '—'
+  try { return new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) } catch { return d }
+}
+function finGrp(c) {
+  if (FIN_REC_CATS.includes(c)) return 'receita'
+  if (['Pró-labore','Salários','13° Salário'].includes(c)) return 'pessoal'
+  if (['Simples Nacional','INSS','IRRF','FGTS'].includes(c)) return 'imposto'
+  return 'operacional'
+}
+function finNorm(desc, val) {
+  if (!desc) return 'Outros'
+  let s = String(desc).trim()
+  if (val > 0) {
+    s = s.replace(/^(pagamento de|pagamento|pagemento|pagamente de|pagamente|pagamdento de|pagamdento|pgto|recebimento de|recebimento|restante do pagamento de|restante do pagamento|restante pagamento|restante|comissão|vídeo|premiação|logo|multa)\s+/i, '').trim()
+    const l = s.toLowerCase()
+    if (l.includes('center clinica')||l.includes('center clínica')) s='Center Clínica'
+    else if (l.includes('thais')||l.includes('thaís')||l.includes('dantas')) s='Thaís Dantas'
+    else if (l.includes('analise saude')||l.includes('análise saúde')||l.includes('analise saúde')||l.includes('análise saude')) s='Análise Saúde'
+    else if (l==='al'||l.includes('al esportes')||l==='al esporte') s='AL Esportes'
+    else if (l.includes('leila')) s='Leila Barros'
+    else if (l.includes('bem estar')||l.includes('bem-estar')||l==='farmácia'||l==='farmacia') s='Farmácia Bem Estar'
+    else if (l.startsWith('ian')||l==='ian') s='Ian Construção'
+    else if (l.includes('ideal')) s='Ideal Modas'
+    else if (l.includes('lara')) s='Lara Barbosa'
+    else if (l.includes('giulianna')||l.includes('giuliana')) s='Giulianna'
+    else if (l.includes('luizyara')) s='Luizyara Torres'
+    else if (l.includes('francês')||l.includes('frances')||l.includes('fracês')||l.includes('frânces')) s='Rádio Francês'
+    else if (l.includes('liderança')||l.includes('lideraça')) s='Liderança'
+    else if (l.includes('cardioclin')) s='CardioClin'
+    else if (l.includes('bosk')) s='Bosk'
+    else if (l.includes('superlav')) s='SuperLav'
+    else if (l.includes('rocha')) s='Rocha Negócios'
+    else if (l.includes('quero delivery')||l.includes('quero delivey')) s='Quero Delivery'
+    else if (l.includes('fabiano')) s='Fabiano Gomes'
+    else if (l.includes('cristal')) s='Cristal'
+    else if (l.includes('polidor')) s='Polidor'
+    else if (l.includes('diana')) s='Diana'
+    else if (l.includes('assertiva')) s='Assertiva'
+    else if (l==='cl'||l.includes('cl papelaria')) s='CL Papelaria'
+    else if (l.includes('matheus')) s='Matheus - Tráfego'
+    else if (l.includes('policlinica')||l.includes('policlínica')) s='Policlínica'
+    s = s.replace(/\s+\d+\/\d+$/, '').replace(/\s+última parcela$/, '').replace(/\s+\(extra\)$/, '').trim()
+    if (s.length > 0) s = s.charAt(0).toUpperCase() + s.slice(1)
+  }
+  return s
+}
+function finBadge(c) { return `fin-badge ${finGrp(c)}` }
+function finProcess(raw) {
+  const sorted = [...raw].sort((a, b) => new Date(a.date) - new Date(b.date))
+  const grouped = {}
+  sorted.forEach(t => {
+    if (!t.date) return
+    const d = new Date(t.date + 'T12:00:00Z')
+    const key = `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}`
+    const label = `${FIN_MESES[d.getMonth()]}/${d.getFullYear().toString().slice(-2)}`
+    if (!grouped[key]) grouped[key] = { key, label, data: [] }
+    grouped[key].data.push({ ...t, d: t.date, v: t.value })
+  })
+  const rawMonths = Object.values(grouped).sort((a, b) => a.key.localeCompare(b.key))
+  const monthlyStats = rawMonths.map(m => {
+    let rec = 0, desp = 0
+    const rows = []
+    m.data.forEach(t => { if (t.v > 0) rec += t.v; else desp += t.v; rows.push({ ...t }) })
+    let rs = 0; rows.forEach(r => { rs += r.v; r.saldo = rs })
+    return { key: m.key, label: m.label, rec, desp, resultado: rec + desp, rows, raw: m.data }
+  })
+  const catTotals = {}
+  const clientTotals = {}
+  sorted.forEach(t => { catTotals[t.cat] = (catTotals[t.cat] || 0) + t.value })
+  sorted.filter(t => t.value > 0).forEach(t => {
+    const name = finNorm(t.desc, t.value)
+    if (!clientTotals[name]) clientTotals[name] = { total: 0, count: 0, dates: [] }
+    clientTotals[name].total += t.value
+    clientTotals[name].count++
+    clientTotals[name].dates.push(t.date)
+  })
+  return { rawMonths, monthlyStats, catTotals, clientTotals }
+}
+
+function FinanceiroCompleto() {
+  const [loading, setLoading] = useState(true)
+  const [loadMsg, setLoadMsg] = useState('Conectando ao banco de dados...')
+  const [rawData, setRawData] = useState([])
+  const [rawMonths, setRawMonths] = useState([])
+  const [monthlyStats, setMonthlyStats] = useState([])
+  const [catTotals, setCatTotals] = useState({})
+  const [clientTotals, setClientTotals] = useState({})
+  const [receivables, setReceivables] = useState([])
+  const [payables, setPayables] = useState([])
+  const [tab, setTab] = useState('controle')
+  const [fcMonth, setFcMonth] = useState(null)
+  const [dreMonth, setDreMonth] = useState(null)
+  const [txMonth, setTxMonth] = useState('todos')
+  const [txTipo, setTxTipo] = useState('todos')
+  const [catFilter, setCatFilter] = useState('todos')
+  const [txModal, setTxModal] = useState(null)
+  const [prevModal, setPrevModal] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const charts = useRef({})
+  const rvCanv = useRef(null), resCanv = useRef(null), mixCanv = useRef(null), despCatCanv = useRef(null)
+  const saldoCanv = useRef(null), dreHistCanv = useRef(null)
+  const topRecCanv = useRef(null), topDespCanv = useRef(null), cliPieCanv = useRef(null)
+
+  function mkChart(key, canvas, cfg) {
+    if (charts.current[key]) { charts.current[key].destroy(); charts.current[key] = null }
+    if (!canvas || !window.Chart) return
+    charts.current[key] = new window.Chart(canvas, cfg)
+  }
+  function killChart(key) { if (charts.current[key]) { charts.current[key].destroy(); charts.current[key] = null } }
+
+  async function loadData() {
+    setLoading(true); setLoadMsg('Conectando ao banco de dados...')
+    try {
+      const res = await fetch(`${FIN_API}?action=read_all`)
+      const result = await res.json()
+      if (!result.success) throw new Error(result.error || 'Erro ao carregar')
+      const raw = result.transactions || []
+      const recList = (result.receivables || []).map(r => ({ id: r.id, vencimento: r.vencimento, cliente: r.name, valor: r.valor, categoria: r.categoria }))
+      const payList = (result.payables || []).map(p => ({ id: p.id, vencimento: p.vencimento, fornecedor: p.name, valor: p.valor, categoria: p.categoria }))
+      const { rawMonths, monthlyStats, catTotals, clientTotals } = finProcess(raw)
+      setRawData(raw); setRawMonths(rawMonths); setMonthlyStats(monthlyStats)
+      setCatTotals(catTotals); setClientTotals(clientTotals)
+      setReceivables(recList); setPayables(payList)
+      const lastKey = rawMonths.length ? rawMonths[rawMonths.length - 1].key : null
+      setFcMonth(lastKey); setDreMonth(lastKey)
+    } catch (e) { console.error(e); alert('Falha ao carregar: ' + e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { loadData() }, [])
+
+  function calcDRE(key) {
+    const m = monthlyStats.find(x => x.key === key)
+    if (!m) return { totalRec: 0, pessoal: 0, impostos: 0, gerais: 0, totalDesp: 0, resultado: 0 }
+    const sum = cats => m.raw.filter(t => cats.includes(t.cat)).reduce((s, t) => s + t.v, 0)
+    const recBas = sum(FIN_REC_CATS)
+    const outrasRec = m.raw.filter(t => t.v > 0 && !FIN_REC_CATS.includes(t.cat)).reduce((s, t) => s + t.v, 0)
+    const totalRec = recBas + outrasRec
+    const pessoal = sum(['Salários','13° Salário','Pró-labore','Lucros Distribuídos'])
+    const impostos = sum(['INSS','IRRF','Simples Nacional'])
+    const gerais = (Math.abs(m.desp) - Math.abs(pessoal + impostos)) * -1
+    return { totalRec, pessoal, impostos, gerais, totalDesp: m.desp, resultado: totalRec + m.desp }
+  }
+
+  const cm = useMemo(() => {
+    if (!monthlyStats.length) return null
+    const now = new Date()
+    const curKey = `${now.getFullYear()}-${('0' + (now.getMonth() + 1)).slice(-2)}`
+    const key = monthlyStats.some(m => m.key === curKey) ? curKey : monthlyStats[monthlyStats.length - 1].key
+    const m = monthlyStats.find(x => x.key === key)
+    if (!m) return null
+    const realized = m.raw || []
+    const recs = receivables.map(r => ({ ...r, status: 'Pendente', matchedTx: null }))
+    const pays = payables.map(p => ({ ...p, status: 'Pendente', matchedTx: null }))
+    const used = new Set()
+    recs.forEach(rec => {
+      const matches = realized.filter(t => {
+        if (t.v <= 0 || used.has(t.id)) return false
+        const nn = finNorm(t.desc, t.v).toLowerCase(), en = rec.cliente.toLowerCase()
+        return nn.includes(en) || en.includes(nn)
+      })
+      if (matches.length > 0) {
+        rec.status = matches.reduce((a, t) => a + t.v, 0) >= rec.valor - 150 ? 'Recebido' : 'Recebido Parcial'
+        rec.matchedTx = matches[matches.length - 1]; matches.forEach(t => used.add(t.id))
+      }
+    })
+    pays.forEach(pay => {
+      const matches = realized.filter(t => {
+        if (t.v >= 0 || used.has(t.id)) return false
+        const td = t.desc.toLowerCase(), pf = pay.fornecedor.toLowerCase()
+        return td.includes(pf) || pf.includes(td)
+      })
+      if (matches.length > 0) {
+        pay.status = matches.reduce((a, t) => a + Math.abs(t.v), 0) >= pay.valor - 150 ? 'Pago' : 'Pago Parcial'
+        pay.matchedTx = matches[matches.length - 1]; matches.forEach(t => used.add(t.id))
+      }
+    })
+    const recReal = realized.filter(t => t.v > 0).reduce((s, t) => s + t.v, 0)
+    const despReal = realized.filter(t => t.v < 0).reduce((s, t) => s + t.v, 0)
+    const recPend = recs.reduce((s, r) => r.status === 'Recebido' ? s : s + r.valor, 0)
+    const despPend = pays.reduce((s, p) => p.status === 'Pago' ? s : s + p.valor, 0)
+    return { key, label: m.label, recs, pays, realized, recReal, despReal, recPend, despPend, saldoProj: recReal + despReal + recPend - despPend }
+  }, [monthlyStats, receivables, payables])
+
+  async function saveTx(form) {
+    setSaving(true)
+    try {
+      const payload = { action: form.id ? 'update' : 'create', date: form.date, desc: form.desc, cat: form.cat, value: parseFloat(form.value) }
+      if (form.id) payload.id = form.id
+      const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify(payload) })).json()
+      if (r.success) { setTxModal(null); await loadData() } else alert('Erro: ' + r.error)
+    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+  }
+  async function delTx(id) {
+    if (!confirm('Excluir esta transação?')) return
+    setSaving(true)
+    try {
+      const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify({ action: 'delete', id }) })).json()
+      if (r.success) await loadData(); else alert('Erro: ' + r.error)
+    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+  }
+  async function savePrev(form) {
+    setSaving(true)
+    try {
+      const payload = { action: form.id ? 'update' : 'create', sheet: form.tipo, vencimento: parseInt(form.vencimento), name: form.name, categoria: form.cat, valor: parseFloat(form.valor) }
+      if (form.id) payload.id = parseInt(form.id)
+      const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify(payload) })).json()
+      if (r.success) { setPrevModal(null); await loadData() } else alert('Erro: ' + r.error)
+    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+  }
+  async function delPrev(id, tipo) {
+    if (!confirm('Excluir esta previsão?')) return
+    setSaving(true)
+    try {
+      const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify({ action: 'delete', id: parseInt(id), sheet: tipo }) })).json()
+      if (r.success) await loadData(); else alert('Erro: ' + r.error)
+    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+  }
+  async function fastReceive(cliente, valor, categoria) {
+    await saveTx({ date: new Date().toISOString().split('T')[0], desc: `Pagamento ${cliente}`, cat: categoria || 'Receitas com Clientes Pacotes', value: valor })
+  }
+  async function fastPay(fornecedor, valor, categoria) {
+    await saveTx({ date: new Date().toISOString().split('T')[0], desc: fornecedor, cat: categoria || 'Assinaturas', value: -Math.abs(valor) })
+  }
+
+  const DK = { grid: { color: 'rgba(255,255,255,0.05)' } }
+  useEffect(() => {
+    if (tab !== 'visaogeral' || !monthlyStats.length || !window.Chart) return
+    const labels = monthlyStats.map(m => m.label)
+    mkChart('rv', rvCanv.current, { type: 'bar', data: { labels, datasets: [{ label: 'Receita', data: monthlyStats.map(m => Math.round(m.rec)), backgroundColor: 'rgba(21,199,122,0.2)', borderColor: '#15c77a', borderWidth: 2, borderRadius: 4 }, { label: 'Despesa', data: monthlyStats.map(m => Math.round(Math.abs(m.desp))), backgroundColor: 'rgba(239,96,96,0.2)', borderColor: '#ef6060', borderWidth: 2, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: DK, y: DK } } })
+    const rc = monthlyStats.map(m => m.resultado >= 0 ? 'rgba(21,199,122,0.2)' : 'rgba(239,96,96,0.2)')
+    const rb = monthlyStats.map(m => m.resultado >= 0 ? '#15c77a' : '#ef6060')
+    mkChart('res', resCanv.current, { type: 'bar', data: { labels, datasets: [{ label: 'Resultado', data: monthlyStats.map(m => Math.round(m.resultado)), backgroundColor: rc, borderColor: rb, borderWidth: 2, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: DK, y: DK } } })
+    const recCats = Object.entries(catTotals).filter(([, v]) => v > 0)
+    mkChart('mix', mixCanv.current, { type: 'doughnut', data: { labels: recCats.map(([c]) => c.slice(0, 15)), datasets: [{ data: recCats.map(([, v]) => Math.round(v)), backgroundColor: ['#15c77a','#3b8fe8','#a983ff','#e4b85d'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'right' } } } })
+    const dc = Object.entries(catTotals).filter(([c, v]) => v < 0 && c !== 'Lucros Distribuídos').sort((a, b) => a[1] - b[1]).slice(0, 6)
+    mkChart('dc', despCatCanv.current, { type: 'bar', data: { labels: dc.map(([c]) => c.slice(0, 18)), datasets: [{ data: dc.map(([, v]) => Math.round(Math.abs(v))), backgroundColor: 'rgba(239,96,96,0.2)', borderColor: '#ef6060', borderWidth: 2, borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: DK, y: { grid: { display: false } } } } })
+    return () => { ['rv','res','mix','dc'].forEach(k => killChart(k)) }
+  }, [tab, monthlyStats, catTotals])
+
+  useEffect(() => {
+    if (tab !== 'fluxo' || !fcMonth || !window.Chart) return
+    const m = monthlyStats.find(x => x.key === fcMonth)
+    if (!m) return
+    const sorted = [...m.rows].sort((a, b) => new Date(a.d) - new Date(b.d))
+    mkChart('saldo', saldoCanv.current, { type: 'line', data: { labels: sorted.map(r => finDate(r.d)), datasets: [{ label: 'Saldo', data: sorted.map(r => Math.round(r.saldo)), borderColor: '#3b8fe8', backgroundColor: 'rgba(59,143,232,0.1)', fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: DK } } })
+    return () => killChart('saldo')
+  }, [tab, fcMonth, monthlyStats])
+
+  useEffect(() => {
+    if (tab !== 'dre' || !monthlyStats.length || !window.Chart) return
+    const labels = monthlyStats.map(m => m.label)
+    const rs = monthlyStats.map(m => calcDRE(m.key).resultado || 0)
+    mkChart('dreH', dreHistCanv.current, { type: 'bar', data: { labels, datasets: [{ label: 'Resultado', data: rs.map(v => Math.round(v)), backgroundColor: rs.map(v => v >= 0 ? 'rgba(21,199,122,0.2)' : 'rgba(239,96,96,0.2)'), borderColor: rs.map(v => v >= 0 ? '#15c77a' : '#ef6060'), borderWidth: 2, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: DK } } })
+    return () => killChart('dreH')
+  }, [tab, monthlyStats])
+
+  useEffect(() => {
+    if (tab !== 'categorias' || !Object.keys(catTotals).length || !window.Chart) return
+    const tR = Object.entries(catTotals).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    const tD = Object.entries(catTotals).filter(([c, v]) => v < 0 && c !== 'Lucros Distribuídos').sort((a, b) => a[1] - b[1]).slice(0, 5)
+    mkChart('tR', topRecCanv.current, { type: 'doughnut', data: { labels: tR.map(x => x[0].slice(0, 15)), datasets: [{ data: tR.map(x => Math.round(x[1])), backgroundColor: ['#15c77a','#34d399','#6ee7b7','#a7f3d0','#d1fae5'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right' } } } })
+    mkChart('tD', topDespCanv.current, { type: 'bar', data: { labels: tD.map(x => x[0].slice(0, 15)), datasets: [{ data: tD.map(x => Math.round(Math.abs(x[1]))), backgroundColor: 'rgba(239,96,96,0.2)', borderColor: '#ef6060', borderWidth: 2, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { grid: { display: false } } } } })
+    return () => { killChart('tR'); killChart('tD') }
+  }, [tab, catTotals])
+
+  useEffect(() => {
+    if (tab !== 'clientes' || !Object.keys(clientTotals).length || !window.Chart) return
+    const top10 = Object.entries(clientTotals).sort((a, b) => b[1].total - a[1].total).slice(0, 10)
+    mkChart('cliPie', cliPieCanv.current, { type: 'doughnut', data: { labels: top10.map(x => x[0].slice(0, 15)), datasets: [{ data: top10.map(x => Math.round(x[1].total)), backgroundColor: ['#15c77a','#059669','#047857','#3b8fe8','#2563eb','#1d4ed8','#8b5cf6','#7c3aed','#6d28d9','#4c1d95'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } } })
+    return () => killChart('cliPie')
+  }, [tab, clientTotals])
+
+  const txRows = useMemo(() => {
+    let rows = txMonth === 'todos' ? [...rawData] : rawData.filter(t => t.date?.startsWith(txMonth))
+    if (txTipo === 'receita') rows = rows.filter(r => r.value > 0)
+    if (txTipo === 'despesa') rows = rows.filter(r => r.value < 0)
+    return rows.sort((a, b) => new Date(b.date) - new Date(a.date))
+  }, [rawData, txMonth, txTipo])
+
+  const catEntries = useMemo(() =>
+    Object.entries(catTotals).filter(([c, v]) => {
+      if (catFilter === 'receita') return v > 0
+      if (catFilter === 'despesa') return v < 0 && c !== 'Lucros Distribuídos'
+      return c !== 'Lucros Distribuídos'
+    }).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])),
+  [catTotals, catFilter])
+  const maxCat = catEntries.length ? Math.max(...catEntries.map(([, v]) => Math.abs(v))) : 1
+
+  const cliSorted = useMemo(() => Object.entries(clientTotals).sort((a, b) => b[1].total - a[1].total), [clientTotals])
+  const maxCli = cliSorted[0]?.[1].total || 1
+  const totalRec = monthlyStats.reduce((s, m) => s + m.rec, 0)
+  const totalDesp = monthlyStats.reduce((s, m) => s + m.desp, 0)
+  const resultado = totalRec + totalDesp
+  const best = [...monthlyStats].sort((a, b) => b.rec - a.rec)[0]
+  const avgRec = monthlyStats.length ? totalRec / monthlyStats.length : 0
+  const fcData = fcMonth ? monthlyStats.find(x => x.key === fcMonth) : null
+  const dreData = dreMonth ? calcDRE(dreMonth) : null
+  const allCats = [...new Set(rawData.map(t => t.cat))].filter(Boolean)
+
+  const FIN_TABS = [
+    { id: 'controle', label: 'Controle Mensal' }, { id: 'visaogeral', label: 'Visão Geral' },
+    { id: 'fluxo', label: 'Fluxo de Caixa' }, { id: 'dre', label: 'DRE' },
+    { id: 'categorias', label: 'Categorias' }, { id: 'clientes', label: 'Clientes' },
+    { id: 'transacoes', label: 'Transações' },
+  ]
+
+  if (loading) return (
+    <div className="fin-loading">
+      <div className="fin-spinner" />
+      <p>{loadMsg}</p>
+    </div>
+  )
+
+  return (
+    <section className="page-grid">
+      <div className="fin-tabs">
+        {FIN_TABS.map(t => <button key={t.id} className={`fin-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}
+        <div style={{ flex: 1 }} />
+        <button className="icon-btn" title="Recarregar" onClick={loadData} style={{ marginRight: 8 }}><RefreshCw size={15} /></button>
+      </div>
+
+      {/* CONTROLE MENSAL */}
+      {tab === 'controle' && cm && (
+        <>
+          <div className="fin-kpi-grid">
+            <div className="fin-kpi green"><div className="fin-kpi-label">Rec. Realizada</div><div className="fin-kpi-value">{finFmt(cm.recReal)}</div><div className="fin-kpi-sub">{cm.realized.filter(t => t.v > 0).length} recebimentos</div></div>
+            <div className="fin-kpi gold"><div className="fin-kpi-label">Rec. Pendente</div><div className="fin-kpi-value">{finFmt(cm.recPend)}</div><div className="fin-kpi-sub">{cm.recs.filter(r => r.status !== 'Recebido').length} pendentes</div></div>
+            <div className="fin-kpi red"><div className="fin-kpi-label">Desp. Realizada</div><div className="fin-kpi-value">{finFmt(Math.abs(cm.despReal))}</div><div className="fin-kpi-sub">{cm.realized.filter(t => t.v < 0).length} pagamentos</div></div>
+            <div className="fin-kpi gold"><div className="fin-kpi-label">Desp. Pendente</div><div className="fin-kpi-value">{finFmt(cm.despPend)}</div><div className="fin-kpi-sub">{cm.pays.filter(p => p.status !== 'Pago').length} pendentes</div></div>
+          </div>
+          <div className="fin-kpi-grid" style={{ gridTemplateColumns: '1fr' }}>
+            <div className="fin-kpi" style={{ borderColor: cm.saldoProj >= 0 ? 'rgba(21,199,122,0.3)' : 'rgba(239,96,96,0.3)', background: cm.saldoProj >= 0 ? 'rgba(21,199,122,0.04)' : 'rgba(239,96,96,0.04)' }}>
+              <div className="fin-kpi-label">Saldo Projetado — {cm.label}</div>
+              <div className="fin-kpi-value" style={{ color: cm.saldoProj >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 28 }}>{finFmt(cm.saldoProj)}</div>
+              <div className="fin-kpi-sub">{cm.recs.filter(r => r.status !== 'Pendente').length}/{cm.recs.length} recebidos · {cm.pays.filter(p => p.status !== 'Pendente').length}/{cm.pays.length} pagos</div>
+            </div>
+          </div>
+          <Panel title="Contas a Receber" action="+ Nova" onAction={() => setPrevModal({ tipo: 'Contas a Receber', vencimento: '', name: '', cat: '', valor: '' })}>
+            <div className="fin-table-wrap">
+              <table className="fin-table">
+                <thead><tr><th>Venc.</th><th>Cliente</th><th>Valor</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
+                <tbody>
+                  {cm.recs.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ color: 'var(--muted)', fontFamily: 'monospace' }}>Dia {r.vencimento}</td>
+                      <td style={{ fontWeight: 500 }}>{r.cliente}</td>
+                      <td className="fin-val-pos">{finFmt(r.valor)}</td>
+                      <td>
+                        {r.status === 'Recebido' && <span className="fin-badge receita">✓ Recebido</span>}
+                        {r.status === 'Recebido Parcial' && <span className="fin-badge" style={{ background: 'rgba(59,143,232,0.1)', color: 'var(--blue)', border: '1px solid rgba(59,143,232,0.2)' }}>Parcial</span>}
+                        {r.status === 'Pendente' && <span className="fin-badge" style={{ background: 'rgba(228,184,93,0.1)', color: 'var(--gold)', border: '1px solid rgba(228,184,93,0.2)' }}>Pendente</span>}
+                      </td>
+                      <td><div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {r.status === 'Recebido' ? <span style={{ color: 'var(--muted)', fontSize: 11 }}>em {finDate(r.matchedTx?.date)}</span>
+                          : <button className="icon-btn" style={{ background: 'rgba(21,199,122,0.1)', color: 'var(--green)', border: '1px solid rgba(21,199,122,0.3)', fontSize: 11, padding: '3px 8px' }} onClick={() => fastReceive(r.cliente, r.valor, r.categoria)}>Receber</button>}
+                        <button className="icon-btn" onClick={() => setPrevModal({ tipo: 'Contas a Receber', id: r.id, vencimento: r.vencimento, name: r.cliente, cat: r.categoria, valor: r.valor })}><Pencil size={13} /></button>
+                        <button className="icon-btn danger" onClick={() => delPrev(r.id, 'Contas a Receber')}><Trash2 size={13} /></button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+          <Panel title="Contas a Pagar" action="+ Nova" onAction={() => setPrevModal({ tipo: 'Contas a Pagar', vencimento: '', name: '', cat: '', valor: '' })}>
+            <div className="fin-table-wrap">
+              <table className="fin-table">
+                <thead><tr><th>Venc.</th><th>Fornecedor</th><th>Valor</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
+                <tbody>
+                  {cm.pays.map((p, i) => (
+                    <tr key={i}>
+                      <td style={{ color: 'var(--muted)', fontFamily: 'monospace' }}>Dia {p.vencimento}</td>
+                      <td style={{ fontWeight: 500 }}>{p.fornecedor}</td>
+                      <td className="fin-val-neg">{finFmt(p.valor)}</td>
+                      <td>
+                        {p.status === 'Pago' && <span className="fin-badge pessoal">✓ Pago</span>}
+                        {p.status === 'Pago Parcial' && <span className="fin-badge" style={{ background: 'rgba(59,143,232,0.1)', color: 'var(--blue)', border: '1px solid rgba(59,143,232,0.2)' }}>Parcial</span>}
+                        {p.status === 'Pendente' && <span className="fin-badge" style={{ background: 'rgba(228,184,93,0.1)', color: 'var(--gold)', border: '1px solid rgba(228,184,93,0.2)' }}>Pendente</span>}
+                      </td>
+                      <td><div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                        {p.status === 'Pago' ? <span style={{ color: 'var(--muted)', fontSize: 11 }}>em {finDate(p.matchedTx?.date)}</span>
+                          : <button className="icon-btn" style={{ background: 'rgba(239,96,96,0.1)', color: 'var(--red)', border: '1px solid rgba(239,96,96,0.3)', fontSize: 11, padding: '3px 8px' }} onClick={() => fastPay(p.fornecedor, p.valor, p.categoria)}>Pagar</button>}
+                        <button className="icon-btn" onClick={() => setPrevModal({ tipo: 'Contas a Pagar', id: p.id, vencimento: p.vencimento, name: p.fornecedor, cat: p.categoria, valor: p.valor })}><Pencil size={13} /></button>
+                        <button className="icon-btn danger" onClick={() => delPrev(p.id, 'Contas a Pagar')}><Trash2 size={13} /></button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+          <Panel title="Transações Realizadas no Mês" action="+ Nova" onAction={() => setTxModal({ date: new Date().toISOString().split('T')[0], desc: '', cat: '', value: '' })}>
+            <div className="fin-table-wrap">
+              <table className="fin-table">
+                <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Ações</th></tr></thead>
+                <tbody>
+                  {cm.realized.map((r, i) => (
+                    <tr key={i}>
+                      <td>{finDate(r.d)}</td>
+                      <td style={{ fontWeight: 500 }}>{r.desc}</td>
+                      <td><span className={finBadge(r.cat)}>{r.cat}</span></td>
+                      <td className={r.v >= 0 ? 'fin-val-pos' : 'fin-val-neg'}>{r.v >= 0 ? '+' : ''}{finFmt(r.v)}</td>
+                      <td>
+                        <button className="icon-btn" onClick={() => setTxModal({ id: r.id, date: r.d, desc: r.desc, cat: r.cat, value: r.v })}><Pencil size={13} /></button>
+                        <button className="icon-btn danger" onClick={() => delTx(r.id)}><Trash2 size={13} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </>
+      )}
+      {tab === 'controle' && !cm && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>Sem dados disponíveis.</p>}
+
+      {/* VISÃO GERAL */}
+      {tab === 'visaogeral' && (
+        <>
+          <div className="fin-kpi-grid">
+            <div className="fin-kpi green"><div className="fin-kpi-label">Receita Total</div><div className="fin-kpi-value">{finShort(totalRec)}</div></div>
+            <div className="fin-kpi red"><div className="fin-kpi-label">Despesa Total</div><div className="fin-kpi-value">{finShort(Math.abs(totalDesp))}</div></div>
+            <div className={`fin-kpi ${resultado >= 0 ? 'green' : 'red'}`}><div className="fin-kpi-label">Resultado</div><div className="fin-kpi-value">{finShort(resultado)}</div><div className="fin-kpi-sub">{resultado >= 0 ? 'positivo' : 'negativo'}</div></div>
+            <div className="fin-kpi blue"><div className="fin-kpi-label">Ticket Médio</div><div className="fin-kpi-value">{finShort(avgRec)}</div></div>
+            <div className="fin-kpi gold"><div className="fin-kpi-label">Melhor Mês</div><div className="fin-kpi-value" style={{ fontSize: 18 }}>{best?.label || '—'}</div></div>
+          </div>
+          <div className="fin-charts-2">
+            <div className="fin-chart-card"><h3>Receita vs Despesa</h3><div className="fin-chart-wrap"><canvas ref={rvCanv} /></div></div>
+            <div className="fin-chart-card"><h3>Resultado Mensal</h3><div className="fin-chart-wrap"><canvas ref={resCanv} /></div></div>
+            <div className="fin-chart-card"><h3>Mix de Receitas</h3><div className="fin-chart-wrap"><canvas ref={mixCanv} /></div></div>
+            <div className="fin-chart-card"><h3>Despesas por Categoria</h3><div className="fin-chart-wrap"><canvas ref={despCatCanv} /></div></div>
+          </div>
+        </>
+      )}
+
+      {/* FLUXO DE CAIXA */}
+      {tab === 'fluxo' && (
+        <>
+          <div className="fin-month-filter">
+            {rawMonths.map(m => <button key={m.key} className={`fin-month-btn${fcMonth === m.key ? ' active' : ''}`} onClick={() => setFcMonth(m.key)}>{m.label}</button>)}
+          </div>
+          {fcData && (
+            <>
+              <div className="fin-kpi-grid">
+                <div className="fin-kpi green"><div className="fin-kpi-label">Receitas</div><div className="fin-kpi-value">{finFmt(fcData.rec)}</div><div className="fin-kpi-sub">{fcData.rows.filter(r => r.v > 0).length} entradas</div></div>
+                <div className="fin-kpi red"><div className="fin-kpi-label">Despesas</div><div className="fin-kpi-value">{finFmt(Math.abs(fcData.desp))}</div><div className="fin-kpi-sub">{fcData.rows.filter(r => r.v < 0).length} saídas</div></div>
+                <div className={`fin-kpi ${fcData.resultado >= 0 ? 'green' : 'red'}`}><div className="fin-kpi-label">Resultado</div><div className="fin-kpi-value">{finFmt(fcData.resultado)}</div></div>
+                <div className="fin-kpi blue"><div className="fin-kpi-label">Maior Entrada</div><div className="fin-kpi-value">{finFmt(fcData.rows.length ? Math.max(...fcData.rows.map(r => r.v)) : 0)}</div></div>
+              </div>
+              <div className="fin-chart-card"><h3>Saldo Acumulado — {fcData.label}</h3><div className="fin-chart-wrap" style={{ height: 200 }}><canvas ref={saldoCanv} /></div></div>
+              <div className="fin-table-wrap">
+                <table className="fin-table">
+                  <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Saldo</th></tr></thead>
+                  <tbody>
+                    {[...fcData.rows].sort((a, b) => new Date(a.d) - new Date(b.d)).map((r, i) => (
+                      <tr key={i}>
+                        <td>{finDate(r.d)}</td>
+                        <td style={{ fontWeight: 500 }}>{r.desc}</td>
+                        <td><span className={finBadge(r.cat)}>{r.cat}</span></td>
+                        <td className={r.v >= 0 ? 'fin-val-pos' : 'fin-val-neg'}>{r.v >= 0 ? '+' : ''}{finFmt(r.v)}</td>
+                        <td style={{ color: r.saldo >= 0 ? 'var(--muted)' : 'var(--red)', fontFamily: 'monospace' }}>{finFmt(r.saldo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* DRE */}
+      {tab === 'dre' && (
+        <>
+          <div className="fin-month-filter">
+            {rawMonths.map(m => <button key={m.key} className={`fin-month-btn${dreMonth === m.key ? ' active' : ''}`} onClick={() => setDreMonth(m.key)}>{m.label}</button>)}
+          </div>
+          <div className="fin-charts-2">
+            <div>
+              {dreData && (
+                <div className="fin-chart-card" style={{ padding: 20 }}>
+                  <div className="fin-dre-group">RECEITAS</div>
+                  <div className="fin-dre-row"><span>Receita Total</span><span className="fin-val-pos">{finFmt(dreData.totalRec)}</span></div>
+                  <div className="fin-dre-total"><span>Total Receitas</span><span className="fin-val-pos">{finFmt(dreData.totalRec)}</span></div>
+                  <div className="fin-dre-group" style={{ marginTop: 12 }}>DESPESAS</div>
+                  {dreData.pessoal !== 0 && <div className="fin-dre-row"><span>Pessoal (Salários / Pro-labore)</span><span className="fin-val-neg">{finFmt(dreData.pessoal)}</span></div>}
+                  {dreData.impostos !== 0 && <div className="fin-dre-row"><span>Impostos</span><span className="fin-val-neg">{finFmt(dreData.impostos)}</span></div>}
+                  {dreData.gerais !== 0 && <div className="fin-dre-row"><span>Custos Gerais / Operacionais</span><span className="fin-val-neg">{finFmt(dreData.gerais)}</span></div>}
+                  <div className="fin-dre-total"><span>Total Despesas</span><span className="fin-val-neg">{finFmt(dreData.totalDesp)}</span></div>
+                  <div className="fin-dre-result"><span>RESULTADO</span><span style={{ color: dreData.resultado >= 0 ? 'var(--green)' : 'var(--red)' }}>{finFmt(dreData.resultado)}</span></div>
+                </div>
+              )}
+            </div>
+            <div className="fin-chart-card"><h3>Histórico de Resultado</h3><div className="fin-chart-wrap"><canvas ref={dreHistCanv} /></div></div>
+          </div>
+          <div className="fin-table-wrap" style={{ overflowX: 'auto', marginTop: 16 }}>
+            <table className="fin-table">
+              <thead><tr><th>Item</th>{monthlyStats.map(m => <th key={m.key}>{m.label}</th>)}</tr></thead>
+              <tbody>
+                {[{k:'totalRec',l:'Receita'},{k:'pessoal',l:'Pessoal'},{k:'impostos',l:'Impostos'},{k:'gerais',l:'Desp. Gerais'},{k:'resultado',l:'Resultado'}].map(({ k, l }) => (
+                  <tr key={k}>
+                    <td style={{ fontWeight: 500 }}>{l}</td>
+                    {monthlyStats.map(ms => {
+                      const v = calcDRE(ms.key)[k] || 0
+                      const cls = k === 'totalRec' ? 'fin-val-pos' : k === 'resultado' ? (v >= 0 ? 'fin-val-pos' : 'fin-val-neg') : v < 0 ? 'fin-val-neg' : ''
+                      return <td key={ms.key} className={cls}>{finShort(v)}</td>
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* CATEGORIAS */}
+      {tab === 'categorias' && (
+        <>
+          <div className="fin-month-filter">
+            {['todos','receita','despesa'].map(f => <button key={f} className={`fin-month-btn${catFilter === f ? ' active' : ''}`} onClick={() => setCatFilter(f)}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>)}
+          </div>
+          <div className="fin-charts-2">
+            <div className="fin-chart-card"><h3>Top Receitas</h3><div className="fin-chart-wrap"><canvas ref={topRecCanv} /></div></div>
+            <div className="fin-chart-card"><h3>Top Despesas</h3><div className="fin-chart-wrap"><canvas ref={topDespCanv} /></div></div>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            {catEntries.map(([cat, val]) => {
+              const pct = Math.round((Math.abs(val) / maxCat) * 100)
+              const color = val > 0 ? 'var(--green)' : 'var(--red)'
+              return (
+                <div key={cat} className="fin-prog-row">
+                  <div className="fin-prog-label">
+                    <span><span className={finBadge(cat)} style={{ marginRight: 8 }}>{cat}</span></span>
+                    <span style={{ color, fontFamily: 'monospace', fontWeight: 500 }}>{finFmt(val)}</span>
+                  </div>
+                  <div className="fin-prog-track"><div className="fin-prog-fill" style={{ width: `${pct}%`, background: color }} /></div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {/* CLIENTES */}
+      {tab === 'clientes' && (
+        <>
+          <div className="fin-kpi-grid">
+            <div className="fin-kpi blue"><div className="fin-kpi-label">Clientes Únicos</div><div className="fin-kpi-value">{Object.keys(clientTotals).length}</div></div>
+            <div className="fin-kpi green"><div className="fin-kpi-label">Top Cliente</div><div className="fin-kpi-value" style={{ fontSize: 18 }}>{cliSorted[0]?.[0] || '—'}</div></div>
+            <div className="fin-kpi gold">
+              <div className="fin-kpi-label">Ticket Médio</div>
+              <div className="fin-kpi-value">{(() => { const vs = Object.values(clientTotals); const t = vs.reduce((s, c) => s + c.total, 0); const n = vs.reduce((s, c) => s + c.count, 0); return finShort(n ? t / n : 0) })()}</div>
+            </div>
+          </div>
+          <div className="fin-charts-2">
+            <div>
+              {cliSorted.slice(0, 10).map(([name, data]) => {
+                const pct = Math.round((data.total / maxCli) * 100)
+                return (
+                  <div key={name} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ flex: 1 }}><div style={{ fontWeight: 500, marginBottom: 6 }}>{name}</div><div className="fin-prog-track"><div className="fin-prog-fill" style={{ width: `${pct}%`, background: 'var(--green)' }} /></div></div>
+                    <div style={{ color: 'var(--muted)', fontFamily: 'monospace', minWidth: 30 }}>{data.count}x</div>
+                    <div className="fin-val-pos">{finShort(data.total)}</div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="fin-chart-card"><h3>Participação por Cliente</h3><div className="fin-chart-wrap"><canvas ref={cliPieCanv} /></div></div>
+          </div>
+          <div className="fin-table-wrap" style={{ marginTop: 16 }}>
+            <table className="fin-table">
+              <thead><tr><th>Cliente</th><th>Qtd</th><th>Total</th><th>Ticket Médio</th><th>Primeiro</th><th>Último</th></tr></thead>
+              <tbody>
+                {cliSorted.slice(0, 25).map(([name, data]) => {
+                  const dates = data.dates.filter(Boolean).sort()
+                  return (
+                    <tr key={name}>
+                      <td style={{ fontWeight: 500 }}>{name}</td>
+                      <td style={{ color: 'var(--blue)' }}>{data.count}</td>
+                      <td className="fin-val-pos">{finFmt(data.total)}</td>
+                      <td style={{ color: 'var(--gold)', fontFamily: 'monospace' }}>{finFmt(data.total / data.count)}</td>
+                      <td>{finDate(dates[0])}</td>
+                      <td>{finDate(dates[dates.length - 1])}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* TRANSAÇÕES */}
+      {tab === 'transacoes' && (
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="fin-month-filter" style={{ flex: 1, flexWrap: 'wrap', marginBottom: 0 }}>
+              <button className={`fin-month-btn${txMonth === 'todos' ? ' active' : ''}`} onClick={() => setTxMonth('todos')}>Todos</button>
+              {rawMonths.map(m => <button key={m.key} className={`fin-month-btn${txMonth === m.key ? ' active' : ''}`} onClick={() => setTxMonth(m.key)}>{m.label}</button>)}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['todos','receita','despesa'].map(t => <button key={t} className={`fin-month-btn${txTipo === t ? ' active' : ''}`} onClick={() => setTxTipo(t)}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>)}
+            </div>
+            <button className="primary" style={{ padding: '6px 14px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => setTxModal({ date: new Date().toISOString().split('T')[0], desc: '', cat: '', value: '' })}><Plus size={14} /> Nova</button>
+          </div>
+          <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>{txRows.length} transações</div>
+          <div className="fin-table-wrap">
+            <table className="fin-table">
+              <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Ações</th></tr></thead>
+              <tbody>
+                {txRows.map((r, i) => (
+                  <tr key={i}>
+                    <td>{finDate(r.date)}</td>
+                    <td style={{ fontWeight: 500 }}>{r.desc}</td>
+                    <td><span className={finBadge(r.cat)}>{r.cat}</span></td>
+                    <td className={r.value >= 0 ? 'fin-val-pos' : 'fin-val-neg'}>{r.value >= 0 ? '+' : ''}{finFmt(r.value)}</td>
+                    <td>
+                      <button className="icon-btn" onClick={() => setTxModal({ id: r.id, date: r.date, desc: r.desc, cat: r.cat, value: r.value })}><Pencil size={13} /></button>
+                      <button className="icon-btn danger" onClick={() => delTx(r.id)}><Trash2 size={13} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* MODAL: Transação */}
+      {txModal && (
+        <div className="fin-modal-overlay" onClick={() => setTxModal(null)}>
+          <div className="fin-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3>{txModal.id ? 'Editar Transação' : 'Nova Transação'}</h3>
+              <button className="icon-btn" onClick={() => setTxModal(null)}><X size={16} /></button>
+            </div>
+            <datalist id="fin-cats-list">{allCats.map(c => <option key={c} value={c} />)}</datalist>
+            <div className="form-grid">
+              <label className="field"><span>Data</span><input type="date" value={txModal.date} onChange={e => setTxModal({ ...txModal, date: e.target.value })} /></label>
+              <label className="field"><span>Descrição</span><input type="text" value={txModal.desc} onChange={e => setTxModal({ ...txModal, desc: e.target.value })} /></label>
+              <label className="field"><span>Categoria</span><input type="text" list="fin-cats-list" value={txModal.cat} onChange={e => setTxModal({ ...txModal, cat: e.target.value })} /></label>
+              <label className="field"><span>Valor (negativo = despesa)</span><input type="number" step="0.01" value={txModal.value} onChange={e => setTxModal({ ...txModal, value: e.target.value })} /></label>
+              <button className="primary span" disabled={saving} onClick={() => saveTx(txModal)}>{saving ? 'Salvando...' : 'Salvar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Conta Prevista */}
+      {prevModal && (
+        <div className="fin-modal-overlay" onClick={() => setPrevModal(null)}>
+          <div className="fin-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3>{prevModal.id ? `Editar ${prevModal.tipo}` : `Nova ${prevModal.tipo}`}</h3>
+              <button className="icon-btn" onClick={() => setPrevModal(null)}><X size={16} /></button>
+            </div>
+            <div className="form-grid">
+              <label className="field"><span>Dia do Vencimento</span><input type="number" min="1" max="31" value={prevModal.vencimento} onChange={e => setPrevModal({ ...prevModal, vencimento: e.target.value })} /></label>
+              <label className="field"><span>{prevModal.tipo === 'Contas a Receber' ? 'Cliente' : 'Fornecedor'}</span><input type="text" value={prevModal.name} onChange={e => setPrevModal({ ...prevModal, name: e.target.value })} /></label>
+              <label className="field"><span>Categoria</span><input type="text" list="fin-cats-list" value={prevModal.cat} onChange={e => setPrevModal({ ...prevModal, cat: e.target.value })} /></label>
+              <label className="field"><span>Valor</span><input type="number" step="0.01" value={prevModal.valor} onChange={e => setPrevModal({ ...prevModal, valor: e.target.value })} /></label>
+              <button className="primary span" disabled={saving} onClick={() => savePrev(prevModal)}>{saving ? 'Salvando...' : 'Salvar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function Financeiro({ state, addItem, updateItem, metrics }) {
   const firstClient = state.clients[0]
   const [form, setForm] = useState({ client_id: firstClient?.id || '', client: firstClient?.name || '', due: firstClient?.payment_due || '2026-06-05', value: firstClient?.monthly || 6200, status: 'A receber', billing_contact: firstClient?.billing_contact || '', billing_phone: firstClient?.billing_phone || firstClient?.phone || '' })
