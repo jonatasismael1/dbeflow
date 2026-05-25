@@ -6,7 +6,10 @@ import { generateState, CLIENT_ID, REDIRECT_URI } from './lib/google-drive.mjs'
 
 // A pasta raiz já existe e pode ser de outra conta da equipe.
 // O escopo drive.file não acessa bem pastas compartilhadas pré-existentes.
-const SCOPES = 'https://www.googleapis.com/auth/drive'
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/userinfo.email',
+].join(' ')
 
 export default async (req) => {
   if (!CLIENT_ID) {

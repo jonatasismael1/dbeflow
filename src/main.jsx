@@ -1645,6 +1645,10 @@ function ProducaoVideo({ state, updateItem }) {
   const [projectFiles, setProjectFiles] = useState([])
   const [showNewProject, setShowNewProject] = useState(false)
   const [newForm, setNewForm] = useState({ title: '', recordingDate: '', notes: '' })
+  const [driveFolder, setDriveFolder] = useState(null)
+  const [driveItems, setDriveItems] = useState([])
+  const [drivePath, setDrivePath] = useState([])
+  const [driveBrowserMsg, setDriveBrowserMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
   const rawInputRef = useRef(null)
@@ -1662,6 +1666,9 @@ function ProducaoVideo({ state, updateItem }) {
 
   useEffect(() => { loadDriveIntegration().then(setDriveConn) }, [])
   useEffect(() => {
+    if (driveConn) loadDriveFolder()
+  }, [driveConn?.root_folder_id])
+  useEffect(() => {
     if (!selectedClient?.id) { setProjects([]); return }
     loadVideoProjects(selectedClient.id).then(setProjects)
     setSelectedProject(null); setProjectFiles([])
@@ -1672,6 +1679,46 @@ function ProducaoVideo({ state, updateItem }) {
   }, [selectedProject?.id])
 
   const msg = (text) => setFeedback(text)
+
+  const loadDriveFolder = async (folderId, pushPath = false) => {
+    setDriveBrowserMsg('Carregando pasta...')
+    const res = await drive.listFolder(folderId)
+    if (res.ok) {
+      setDriveFolder(res.folder)
+      setDriveItems(res.files || [])
+      setDriveBrowserMsg('')
+      if (pushPath) setDrivePath((current) => [...current, res.folder])
+      else if (!folderId) setDrivePath([res.folder])
+    } else setDriveBrowserMsg(`Erro ao listar pasta: ${res.error}`)
+  }
+
+  const enterDriveFolder = (item) => {
+    if (!item?.isFolder) return
+    loadDriveFolder(item.id, true)
+  }
+
+  const goRootDriveFolder = () => {
+    setDrivePath([])
+    loadDriveFolder()
+  }
+
+  const goUpDriveFolder = () => {
+    if (drivePath.length <= 1) return goRootDriveFolder()
+    const nextPath = drivePath.slice(0, -1)
+    setDrivePath(nextPath)
+    loadDriveFolder(nextPath[nextPath.length - 1]?.id)
+  }
+
+  const linkFolderToClient = async (item) => {
+    if (!selectedClient?.id || !item?.isFolder) return
+    setBusy(true); setDriveBrowserMsg(`Vinculando "${item.name}" ao cliente...`)
+    const res = await drive.linkClientFolder(selectedClient.id, item.id)
+    setBusy(false)
+    if (res.ok) {
+      updateItem('clients', selectedClient.id, { ...selectedClient, drive_folder_id: res.folderId, drive_folder_url: res.folderUrl })
+      setDriveBrowserMsg(`Pasta "${item.name}" vinculada a ${selectedClient.name}.`)
+    } else setDriveBrowserMsg(`Erro ao vincular pasta: ${res.error}`)
+  }
 
   const handleCreateFolder = async () => {
     if (!selectedClient) return
@@ -1783,6 +1830,43 @@ function ProducaoVideo({ state, updateItem }) {
                 </a>
               )}
               {feedback && <p className="muted-note" style={{ marginTop: 4 }}>{feedback}</p>}
+            </div>
+          </Panel>
+
+          <Panel title="Pasta raiz do Drive" action="Atualizar" onAction={() => loadDriveFolder(driveFolder?.id)}>
+            <div className="drive-browser-head">
+              <div>
+                <strong>{driveFolder?.name || 'DBE Apresentações'}</strong>
+                <span>{driveItems.length} item(ns) nesta pasta</span>
+              </div>
+              <div className="button-row compact no-margin">
+                <button className="secondary" onClick={goRootDriveFolder}><FolderOpen size={13} /> Raiz</button>
+                <button className="secondary" onClick={goUpDriveFolder} disabled={drivePath.length <= 1}>Voltar</button>
+              </div>
+            </div>
+            {driveBrowserMsg && <p className="muted-note" style={{ marginTop: 8 }}>{driveBrowserMsg}</p>}
+            <div className="drive-file-list">
+              {driveItems.length ? driveItems.map((item) => (
+                <div className="drive-file-row" key={item.id}>
+                  <button className="drive-file-main" onClick={() => item.isFolder ? enterDriveFolder(item) : window.open(item.url, '_blank')}>
+                    {item.isFolder ? <FolderOpen size={16} /> : <FileText size={16} />}
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{driveItemMeta(item)}</small>
+                    </span>
+                  </button>
+                  <div className="row-actions">
+                    {item.isFolder && selectedClient && (
+                      <button className="icon-btn" title="Usar como pasta do cliente" onClick={() => linkFolderToClient(item)} disabled={busy}>
+                        <Check size={14} />
+                      </button>
+                    )}
+                    <a className="icon-btn" title="Abrir no Drive" href={item.url} target="_blank" rel="noreferrer">
+                      <ExternalLink size={14} />
+                    </a>
+                  </div>
+                </div>
+              )) : <div className="empty-box">Nenhum item encontrado nessa pasta.</div>}
             </div>
           </Panel>
 
@@ -2372,6 +2456,13 @@ function nextPaymentDate(day) {
 
 function dateTime(value) {
   return value ? format(new Date(value), 'dd/MM HH:mm') : '-'
+}
+
+function driveItemMeta(item) {
+  const type = item.isFolder ? 'Pasta' : 'Arquivo'
+  const size = item.size ? ` · ${(Number(item.size) / 1024 / 1024).toFixed(1)} MB` : ''
+  const modified = item.modifiedTime ? ` · ${dateTime(item.modifiedTime)}` : ''
+  return `${type}${size}${modified}`
 }
 
 function copyText(text) {

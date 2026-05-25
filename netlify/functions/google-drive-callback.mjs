@@ -54,7 +54,14 @@ export default async (req) => {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     })
     const profile = await profileRes.json().catch(() => ({}))
-    const email = profile.email || ''
+    let email = profile.email || ''
+    if (!email) {
+      const aboutRes = await fetch(`${DRIVE_API}/about?fields=user(emailAddress)`, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      })
+      const about = await aboutRes.json().catch(() => ({}))
+      email = about.user?.emailAddress || ''
+    }
 
     const folderRes = await fetch(
       `${DRIVE_API}/files/${ROOT_FOLDER_ID}?fields=id,name,capabilities(canAddChildren),owners(emailAddress)&supportsAllDrives=true`,

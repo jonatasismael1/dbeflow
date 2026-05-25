@@ -57,6 +57,11 @@ export const drive = {
   createVideoProject: (clientId, clientName, title, recordingDate, notes) =>
     call('drive-create-video-project', { clientId, clientName, title, recordingDate, notes }),
 
+  listFolder: (folderId) => call('drive-list-folder', { folderId }),
+
+  linkClientFolder: (clientId, folderId) =>
+    call('drive-link-client-folder', { clientId, folderId }),
+
   // Retorna um upload_uri para o frontend fazer PUT direto no Drive (sem expor o access_token)
   getRawUploadUrl: (videoProjectId, rawFolderId, fileName, mimeType) =>
     call('drive-upload-raw-files', { videoProjectId, rawFolderId, fileName, mimeType }),
