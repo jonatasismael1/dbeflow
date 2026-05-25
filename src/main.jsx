@@ -1,13 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Activity,
   BadgeDollarSign,
   Bot,
+  Calendar,
   CalendarDays,
   Camera,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   Copy,
@@ -22,24 +24,29 @@ import {
   HardDrive,
   LayoutDashboard,
   Megaphone,
+  Menu,
   MessageCircle,
   MonitorPlay,
   Pause,
   Paperclip,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
   Search,
   Send,
   Settings,
+  Smile,
   Sparkles,
   Target,
   Trash2,
+  TrendingUp,
   UploadCloud,
   UserPlus,
   Users,
   WalletCards,
   Wand2,
+  X,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import './styles.css'
@@ -54,21 +61,24 @@ const CONTENT_STATUSES = ['Ideia', 'A produzir', 'Em produção', 'Roteiro pront
 const CONTENT_PRIORITIES = ['Baixa', 'Média', 'Alta', 'Urgente']
 
 const nav = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'clientes', label: 'Clientes', icon: Users },
-  { id: 'crm', label: 'CRM', icon: Users },
-  { id: 'diagnostico', label: 'Diagnóstico', icon: Gauge },
-  { id: 'onboarding', label: 'Onboarding', icon: ClipboardCheck },
-  { id: 'contratos', label: 'Contratos', icon: FileSignature },
-  { id: 'cronograma', label: 'Cronograma de Conteúdo', icon: CalendarDays },
+  { id: 'dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
+  { id: 'cronograma',   label: 'Cronograma',   icon: CalendarDays },
+  { id: 'calendario',   label: 'Calendário',   icon: Calendar },
   { id: 'teleprompter', label: 'Teleprompter', icon: MonitorPlay },
-  { id: 'ai', label: 'Deby AI', icon: Sparkles },
-  { id: 'instagram', label: 'Instagram', icon: Camera },
-  { id: 'conversas', label: 'Conversas', icon: MessageCircle },
-  { id: 'producao', label: 'Produção', icon: Film },
-  { id: 'financeiro', label: 'Financeiro', icon: WalletCards },
-  { id: 'integracoes', label: 'Integrações', icon: Settings },
+  { id: 'producao',     label: 'Produção',     icon: Film },
+  { id: 'clientes',     label: 'Clientes',     icon: Users },
+  { id: 'conversas',    label: 'Conversas',    icon: MessageCircle },
+  { id: 'instagram',    label: 'Instagram',    icon: Camera },
+  { id: 'financeiro',   label: 'Financeiro',   icon: WalletCards },
+  { id: 'crm',          label: 'CRM',          icon: Target },
+  { id: 'onboarding',   label: 'Onboarding',   icon: ClipboardCheck },
+  { id: 'diagnostico',  label: 'Diagnóstico',  icon: Gauge },
+  { id: 'ai',           label: 'Deby AI',      icon: Sparkles },
+  { id: 'contratos',    label: 'Contratos',    icon: FileSignature },
+  { id: 'integracoes',  label: 'Integrações',  icon: Settings },
 ]
+
+const MOBILE_NAV = ['cronograma', 'calendario', 'financeiro', 'conversas']
 
 const seed = {
   clients: [
@@ -190,12 +200,19 @@ function App() {
     return record
   }
 
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  const navigate = (id) => { setActive(id); setDrawerOpen(false) }
+
   if (isPublicDiagnostic) {
     return <PublicDiagnosticPage onSubmit={addDiagnosticSubmission} />
   }
 
+  const activeLabel = nav.find((item) => item.id === active)?.label || 'DBE Flow'
+
   return (
     <div className="app-shell">
+      {/* Sidebar hover-expand — desktop */}
       <aside className="sidebar">
         <div className="brand">
           <img src={logo} alt="DBE" />
@@ -206,7 +223,7 @@ function App() {
         </div>
         <nav>
           {nav.map((item) => (
-            <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => setActive(item.id)}>
+            <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
               <item.icon size={18} />
               <span>{item.label}</span>
             </button>
@@ -214,10 +231,34 @@ function App() {
         </nav>
       </aside>
 
+      {/* Mobile top bar */}
+      <div className="mobile-top-bar">
+        <img src={logo} alt="DBE" />
+        <span className="mobile-top-title">{activeLabel}</span>
+        <button className="mobile-menu-btn" onClick={() => setDrawerOpen(true)}><Menu size={20} /></button>
+      </div>
+
+      {/* Mobile drawer */}
+      {drawerOpen && <>
+        <div className="mobile-drawer-overlay" onClick={() => setDrawerOpen(false)} />
+        <div className="mobile-drawer">
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <strong>Menu</strong>
+            <button style={{background:'transparent',border:0,color:'var(--muted)',cursor:'pointer'}} onClick={() => setDrawerOpen(false)}><X size={18} /></button>
+          </div>
+          {nav.map((item) => (
+            <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
+              <item.icon size={16} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </>}
+
       <main>
         <header className="topbar">
           <div>
-            <h1>{active === 'dashboard' ? 'Dashboard' : (nav.find((item) => item.id === active)?.label || 'DBE Flow')}</h1>
+            <h1>{active === 'dashboard' ? 'Dashboard' : activeLabel}</h1>
           </div>
           <div className="top-actions">
             <Badge text={isSupabaseConfigured ? (loading ? 'Sincronizando...' : 'Nuvem') : 'Local'} tone={isSupabaseConfigured ? 'success' : 'gold'} />
@@ -232,7 +273,7 @@ function App() {
           </div>
         </header>
 
-        {active === 'dashboard' && <Dashboard state={state} metrics={metrics} setActive={setActive} />}
+        {active === 'dashboard' && <Dashboard state={state} metrics={metrics} setActive={navigate} />}
         {active === 'clientes' && <Clientes state={state} addItem={addItem} updateItem={updateItem} query={query} />}
         {active === 'crm' && <Crm state={state} addItem={addItem} updateItem={updateItem} removeItem={removeItem} query={query} />}
         {active === 'diagnostico' && <Diagnostico state={state} addDiagnosticSubmission={addDiagnosticSubmission} />}
@@ -240,14 +281,29 @@ function App() {
         {active === 'contratos' && <Contratos state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conteudo' && <Conteudo state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'cronograma' && <CronogramaConteudo state={state} addItem={addItem} updateItem={updateItem} />}
-        {active === 'teleprompter' && <Teleprompter scripts={state.scripts} />}
+        {active === 'calendario' && <Calendario state={state} />}
+        {active === 'teleprompter' && <Teleprompter state={state} />}
         {active === 'ai' && <DebyAI state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'instagram' && <InstagramStudio state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
         {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
-        {active === 'financeiro' && <Financeiro state={state} addItem={addItem} updateItem={updateItem} metrics={metrics} />}
+        {active === 'financeiro' && <FinanceiroCompleto />}
         {active === 'integracoes' && <Integracoes />}
       </main>
+
+      {/* Mobile bottom nav — 4 botões principais */}
+      <nav className="mobile-bottom-nav">
+        {MOBILE_NAV.map((id) => {
+          const item = nav.find((n) => n.id === id)
+          if (!item) return null
+          return (
+            <button key={id} className={active === id ? 'active' : ''} onClick={() => navigate(id)}>
+              <item.icon size={22} />
+              <span>{item.label}</span>
+            </button>
+          )
+        })}
+      </nav>
     </div>
   )
 }
@@ -1075,6 +1131,11 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(() => emptyContentForm(state.clients))
   const [driveFeedback, setDriveFeedback] = useState('')
+  const [editedVideos, setEditedVideos] = useState([])
+  const [selectedEditedVideoId, setSelectedEditedVideoId] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
+  const [reviewFeedback, setReviewFeedback] = useState('')
+  const [reviewLoading, setReviewLoading] = useState(false)
   const contentFileInputRef = useRef(null)
 
   const visibleClients = state.clients.filter((client) => filters.archived || !isArchivedClient(client))
@@ -1091,6 +1152,10 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
     setEditing(null)
     setForm(emptyContentForm(state.clients, client))
     setDriveFeedback('')
+    setEditedVideos([])
+    setSelectedEditedVideoId('')
+    setReviewNote('')
+    setReviewFeedback('')
     setModalOpen(true)
   }
 
@@ -1098,6 +1163,10 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
     setEditing(item)
     setForm({ ...emptyContentForm(state.clients), ...item })
     setDriveFeedback('')
+    setEditedVideos([])
+    setSelectedEditedVideoId('')
+    setReviewNote('')
+    setReviewFeedback('')
     setModalOpen(true)
   }
 
@@ -1125,6 +1194,8 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
           ...payload,
           drive_folder_id: folderRes.folderId,
           drive_folder_url: folderRes.folderUrl,
+          edited_folder_id: folderRes.editedFolderId,
+          edited_folder_url: folderRes.editedFolderUrl,
           updatedAt: new Date().toISOString(),
         }
         updateItem('scripts', saved.id, nextPayload)
@@ -1138,14 +1209,28 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
   const ensureContentFolder = async () => {
     const client = state.clients.find((item) => item.id === form.client_id) || state.clients.find((item) => item.name === form.client)
     if (!editing?.id || !client?.id || !form.title) return null
-    if (form.drive_folder_id) return { folderId: form.drive_folder_id, folderUrl: form.drive_folder_url }
+    if (form.drive_folder_id && form.edited_folder_id) {
+      return {
+        folderId: form.drive_folder_id,
+        folderUrl: form.drive_folder_url,
+        editedFolderId: form.edited_folder_id,
+        editedFolderUrl: form.edited_folder_url,
+      }
+    }
     setDriveFeedback('Criando pasta do roteiro no Drive...')
     const res = await drive.createContentFolder(editing.id, client.id, client.name, form.title)
     if (!res.ok) {
       setDriveFeedback(`Erro ao criar pasta no Drive: ${res.error}`)
       return null
     }
-    const patch = { ...form, drive_folder_id: res.folderId, drive_folder_url: res.folderUrl, updatedAt: new Date().toISOString() }
+    const patch = {
+      ...form,
+      drive_folder_id: res.folderId,
+      drive_folder_url: res.folderUrl,
+      edited_folder_id: res.editedFolderId,
+      edited_folder_url: res.editedFolderUrl,
+      updatedAt: new Date().toISOString(),
+    }
     setForm(patch)
     updateItem('scripts', editing.id, patch)
     setDriveFeedback('Pasta do roteiro pronta no Drive.')
@@ -1192,6 +1277,78 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
       setDriveFeedback(`${uploaded.length} arquivo(s) enviado(s) para a pasta do roteiro.`)
     }
   }
+
+  const refreshEditedVideos = async () => {
+    if (!editing?.id) return
+    setReviewLoading(true)
+    setReviewFeedback('Buscando vídeos editados no Drive...')
+    const folder = await ensureContentFolder()
+    if (!folder) {
+      setReviewLoading(false)
+      return
+    }
+    const res = await drive.listEditedFiles(editing.id)
+    setReviewLoading(false)
+    if (!res.ok) {
+      setReviewFeedback(`Erro ao buscar vídeos editados: ${res.error}`)
+      return
+    }
+    const files = res.files || []
+    setEditedVideos(files)
+    const nextSelected = selectedEditedVideoId && files.some((file) => file.id === selectedEditedVideoId)
+      ? selectedEditedVideoId
+      : files[0]?.id || ''
+    setSelectedEditedVideoId(nextSelected)
+    const selectedFile = files.find((file) => file.id === nextSelected)
+    setReviewNote(getVideoReview(form, nextSelected)?.note || '')
+    setReviewFeedback(files.length ? `${files.length} arquivo(s) encontrado(s) em Vídeo editado.` : 'Nenhum vídeo editado encontrado nessa pasta.')
+    if (res.folderId && (!form.edited_folder_id || form.edited_folder_id !== res.folderId)) {
+      const patch = { ...form, edited_folder_id: res.folderId, edited_folder_url: res.folderUrl, updatedAt: new Date().toISOString() }
+      setForm(patch)
+      updateItem('scripts', editing.id, patch)
+    }
+    if (selectedFile) setReviewNote(getVideoReview(form, selectedFile.id)?.note || '')
+  }
+
+  const selectEditedVideo = (file) => {
+    setSelectedEditedVideoId(file.id)
+    setReviewNote(getVideoReview(form, file.id)?.note || '')
+    setReviewFeedback('')
+  }
+
+  const saveVideoReview = (status) => {
+    const file = editedVideos.find((item) => item.id === selectedEditedVideoId) || editedVideos[0]
+    if (!editing?.id || !file) return
+    const now = new Date().toISOString()
+    const reviews = normalizeVideoReviews(form.video_reviews)
+    const current = reviews.find((item) => item.fileId === file.id) || {}
+    const nextReview = {
+      ...current,
+      fileId: file.id,
+      fileName: file.name,
+      fileUrl: file.url,
+      previewUrl: file.previewUrl,
+      status,
+      note: reviewNote,
+      updatedAt: now,
+      createdAt: current.createdAt || now,
+    }
+    const nextReviews = [...reviews.filter((item) => item.fileId !== file.id), nextReview]
+    const patch = {
+      ...form,
+      video_reviews: nextReviews,
+      approval_status: status === 'approved' ? 'Aprovado' : status === 'changes_requested' ? 'Ajustes solicitados' : 'Comentado',
+      approved_video_file_id: status === 'approved' ? file.id : form.approved_video_file_id,
+      status: status === 'approved' ? 'Aprovado' : status === 'changes_requested' ? 'Aprovando' : form.status,
+      updatedAt: now,
+    }
+    setForm(patch)
+    updateItem('scripts', editing.id, patch)
+    setReviewFeedback(status === 'approved' ? 'Vídeo aprovado.' : status === 'changes_requested' ? 'Observações salvas e ajustes solicitados.' : 'Observação salva.')
+  }
+
+  const selectedEditedVideo = editedVideos.find((item) => item.id === selectedEditedVideoId) || editedVideos[0]
+  const selectedReview = selectedEditedVideo ? getVideoReview(form, selectedEditedVideo.id) : null
 
   return (
     <section className="page-grid">
@@ -1266,7 +1423,7 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
         })}
       </div>
 
-      <Modal title={editing ? 'Editar conteúdo' : 'Novo conteúdo'} open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal title={editing ? 'Editar conteúdo' : 'Novo conteúdo'} open={modalOpen} onClose={() => setModalOpen(false)} wide={form.format === 'Roteiro de Reels'}>
         <div className="content-modal">
           <div className="form-grid">
             <Select label="Cliente / Projeto" value={form.client_id} onChange={(client_id) => {
@@ -1291,27 +1448,93 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
               <textarea className="textarea" value={mediaFilesToText(form.media_files)} onChange={(event) => setForm({ ...form, media_files: event.target.value })} placeholder="Cole links do Drive, referências ou nomes de arquivos." />
             </label>
             {form.format === 'Roteiro de Reels' && (
-              <div className="drive-content-tools span">
-                <div>
-                  <strong>Pasta do roteiro no Drive</strong>
-                  <span>{form.drive_folder_url ? 'Pasta vinculada. Os arquivos enviados entram nela.' : 'Ao salvar, a pasta será criada dentro da pasta do cliente.'}</span>
+              <>
+                <div className="drive-content-tools span">
+                  <div>
+                    <strong>Pasta do roteiro no Drive</strong>
+                    <span>{form.drive_folder_url ? 'Pasta vinculada. Os arquivos enviados entram nela.' : 'Ao salvar, a pasta será criada dentro da pasta do cliente.'}</span>
+                  </div>
+                  <div className="button-row compact no-margin">
+                    {form.drive_folder_url && (
+                      <a className="secondary" href={form.drive_folder_url} target="_blank" rel="noreferrer">
+                        <ExternalLink size={14} /> Abrir pasta
+                      </a>
+                    )}
+                    {form.edited_folder_url && (
+                      <a className="secondary" href={form.edited_folder_url} target="_blank" rel="noreferrer">
+                        <Film size={14} /> Vídeo editado
+                      </a>
+                    )}
+                    {editing?.id && (
+                      <>
+                        <button className="secondary" onClick={ensureContentFolder}><FolderOpen size={14} /> Garantir pasta</button>
+                        <button className="primary" onClick={() => contentFileInputRef.current?.click()}><UploadCloud size={14} /> Adicionar arquivos</button>
+                        <input ref={contentFileInputRef} type="file" multiple accept="video/*,image/*,audio/*" style={{ display:'none' }} onChange={(event) => uploadContentFiles(event.target.files)} />
+                      </>
+                    )}
+                  </div>
+                  {driveFeedback && <p className="muted-note">{driveFeedback}</p>}
                 </div>
-                <div className="button-row compact no-margin">
-                  {form.drive_folder_url && (
-                    <a className="secondary" href={form.drive_folder_url} target="_blank" rel="noreferrer">
-                      <ExternalLink size={14} /> Abrir pasta
-                    </a>
-                  )}
-                  {editing?.id && (
-                    <>
-                      <button className="secondary" onClick={ensureContentFolder}><FolderOpen size={14} /> Garantir pasta</button>
-                      <button className="primary" onClick={() => contentFileInputRef.current?.click()}><UploadCloud size={14} /> Adicionar arquivos</button>
-                      <input ref={contentFileInputRef} type="file" multiple accept="video/*,image/*,audio/*" style={{ display:'none' }} onChange={(event) => uploadContentFiles(event.target.files)} />
-                    </>
-                  )}
-                </div>
-                {driveFeedback && <p className="muted-note">{driveFeedback}</p>}
-              </div>
+
+                {editing?.id && (
+                  <div className="video-review-panel span">
+                    <div className="review-head">
+                      <div>
+                        <strong>Revisão do vídeo editado</strong>
+                        <span>Player interno, observações e aprovação do arquivo final.</span>
+                      </div>
+                      <button className="secondary" onClick={refreshEditedVideos} disabled={reviewLoading}>
+                        <RefreshCw size={14} /> {reviewLoading ? 'Buscando...' : 'Buscar vídeos'}
+                      </button>
+                    </div>
+                    {editedVideos.length ? (
+                      <div className="review-workspace">
+                        <div className="review-files">
+                          {editedVideos.map((file) => {
+                            const review = getVideoReview(form, file.id)
+                            return (
+                              <button key={file.id} className={selectedEditedVideo?.id === file.id ? 'review-file active' : 'review-file'} onClick={() => selectEditedVideo(file)}>
+                                <Film size={15} />
+                                <span>
+                                  <strong>{file.name}</strong>
+                                  <small>{reviewLabel(review?.status) || driveItemMeta(file)}</small>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <div className="review-player-wrap">
+                          {selectedEditedVideo && (
+                            <>
+                              <div className="review-player">
+                                <iframe title={selectedEditedVideo.name} src={selectedEditedVideo.previewUrl} allow="autoplay; fullscreen; encrypted-media" allowFullScreen />
+                              </div>
+                              <div className="review-meta">
+                                <strong>{selectedEditedVideo.name}</strong>
+                                {selectedReview?.status && <Badge text={reviewLabel(selectedReview.status)} tone={selectedReview.status === 'approved' ? 'success' : selectedReview.status === 'changes_requested' ? 'danger' : 'blue'} />}
+                              </div>
+                              <label className="field">
+                                <span>Observações para o editor</span>
+                                <textarea className="textarea" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Descreva ajustes de corte, legenda, cor, áudio ou aprovação." />
+                              </label>
+                              <div className="button-row compact no-margin">
+                                <button className="secondary" onClick={() => saveVideoReview('commented')}><FileText size={14} /> Salvar observação</button>
+                                <button className="secondary" onClick={() => saveVideoReview('changes_requested')}><RefreshCw size={14} /> Pedir ajustes</button>
+                                <button className="primary" onClick={() => saveVideoReview('approved')}><Check size={14} /> Aprovar vídeo</button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="empty-box review-empty">
+                        <span>Nenhum vídeo editado carregado. Coloque o arquivo na pasta Vídeo editado e clique em buscar vídeos.</span>
+                      </div>
+                    )}
+                    {reviewFeedback && <p className="muted-note">{reviewFeedback}</p>}
+                  </div>
+                )}
+              </>
             )}
             <label className="field span">
               <span>Observações internas</span>
@@ -1333,15 +1556,212 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
   )
 }
 
-function Teleprompter({ scripts }) {
-  const [selected, setSelected] = useState(scripts[0]?.id)
+// ============================================================
+// CALENDÁRIO — 3 modos: edição, capa, postagem
+// ============================================================
+function Calendario({ state }) {
+  const [viewMode, setViewMode] = useState('postagem') // 'edicao' | 'capa' | 'postagem'
+  const [displayMode, setDisplayMode] = useState('grid') // 'grid' | 'list'
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
+  })
+
+  const { year, month } = currentMonth
+  const today = new Date()
+  const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const dayNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+
+  const prevMonth = () => setCurrentMonth(({ year: y, month: m }) => m === 0 ? { year: y - 1, month: 11 } : { year: y, month: m - 1 })
+  const nextMonth = () => setCurrentMonth(({ year: y, month: m }) => m === 11 ? { year: y + 1, month: 0 } : { year: y, month: m + 1 })
+
+  // Gera eventos a partir dos scripts e posts de acordo com o modo
+  const getEvents = () => {
+    const events = []
+    const scripts = state.scripts || []
+    const posts = state.posts || []
+    const contents = [...(state.cronograma || []), ...(state.scripts || [])]
+
+    if (viewMode === 'edicao') {
+      // Datas de edição: usa campo edit_date ou data estimada dos scripts
+      scripts.forEach((s) => {
+        const d = s.edit_date || s.due_date || s.delivery_date
+        if (d) events.push({ date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.editor || s.owner || 'DBE', type: 'edicao', status: s.status })
+      })
+      // cronograma também pode ter data de edição
+      ;(state.cronograma || []).forEach((c) => {
+        const d = c.edit_date || c.due
+        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.editor || c.owner || 'DBE', type: 'edicao', status: c.status })
+      })
+    } else if (viewMode === 'capa') {
+      posts.forEach((p) => {
+        const d = p.cover_date || p.date
+        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 30) + '...' : 'Post', sub: p.client || p.network || '', type: 'capa', status: p.status })
+      })
+      ;(state.cronograma || []).forEach((c) => {
+        const d = c.cover_date || c.date
+        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Capa', sub: c.client || '', type: 'capa', status: c.status })
+      })
+    } else {
+      // Postagem: usa data de postagem
+      posts.forEach((p) => {
+        const d = p.date || p.scheduled_date
+        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 30) + '...' : 'Post', sub: p.client || p.network || '', type: 'postagem', status: p.status })
+      })
+      ;(state.cronograma || []).forEach((c) => {
+        const d = c.post_date || c.date
+        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.client || '', type: 'postagem', status: c.status })
+      })
+    }
+    return events
+  }
+
+  const allEvents = getEvents()
+
+  // Filtra eventos do mês atual
+  const monthEvents = allEvents.filter((e) => {
+    const d = new Date(e.date + 'T12:00:00')
+    return d.getFullYear() === year && d.getMonth() === month
+  })
+
+  // Para modo grid, monta os dias do mês
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const daysInPrev = new Date(year, month, 0).getDate()
+
+  const cells = []
+  for (let i = 0; i < firstDay; i++) cells.push({ day: daysInPrev - firstDay + 1 + i, otherMonth: true, date: null })
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const evs = monthEvents.filter((e) => e.date === dateStr)
+    const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d
+    cells.push({ day: d, otherMonth: false, date: dateStr, events: evs, isToday })
+  }
+  const remaining = (7 - (cells.length % 7)) % 7
+  for (let i = 1; i <= remaining; i++) cells.push({ day: i, otherMonth: true, date: null })
+
+  const viewLabels = { edicao: 'Datas de Edição', capa: 'Datas de Capa', postagem: 'Datas de Postagem' }
+  const viewDescs = {
+    edicao: 'Quando cada conteúdo deve ser editado e quem é responsável',
+    capa: 'Quando a capa/thumbnail do Reels deve estar pronta',
+    postagem: 'Data de publicação e status atual do conteúdo',
+  }
+
+  const statusTone = (s) => {
+    if (!s) return 'postagem'
+    const l = s.toLowerCase()
+    if (l.includes('aprovado') || l.includes('postado')) return 'postagem'
+    if (l.includes('revisão') || l.includes('revisao') || l.includes('produção')) return 'postagem pendente'
+    return 'postagem pendente'
+  }
+
+  // Eventos futuros para lista
+  const upcomingEvents = allEvents
+    .filter((e) => new Date(e.date + 'T12:00:00') >= new Date(today.toDateString()))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 30)
+
+  return (
+    <section className="cal-shell page-grid">
+      {/* Controles */}
+      <div className="cal-view-bar">
+        <button className={`cal-view-btn${viewMode === 'edicao' ? ' active' : ''}`} onClick={() => setViewMode('edicao')}>
+          <Pencil size={14} style={{marginRight:4}} />Datas de Edição
+        </button>
+        <button className={`cal-view-btn${viewMode === 'capa' ? ' active' : ''}`} onClick={() => setViewMode('capa')}>
+          <Camera size={14} style={{marginRight:4}} />Datas de Capa
+        </button>
+        <button className={`cal-view-btn${viewMode === 'postagem' ? ' active' : ''}`} onClick={() => setViewMode('postagem')}>
+          <Send size={14} style={{marginRight:4}} />Datas de Postagem
+        </button>
+        <div style={{marginLeft:'auto', display:'flex', gap:6}}>
+          <button className={`cal-view-btn${displayMode === 'grid' ? ' active' : ''}`} onClick={() => setDisplayMode('grid')}>Grade</button>
+          <button className={`cal-view-btn${displayMode === 'list' ? ' active' : ''}`} onClick={() => setDisplayMode('list')}>Lista</button>
+        </div>
+      </div>
+
+      <div style={{padding:'10px 14px', border:'1px solid var(--border)', borderRadius:'var(--radius)', background:'rgba(15,23,38,.88)', fontSize:13, color:'var(--muted)'}}>
+        <strong style={{color:'var(--text)', marginRight:8}}>{viewLabels[viewMode]}</strong>{viewDescs[viewMode]}
+      </div>
+
+      {/* Navegação de mês */}
+      <div style={{display:'flex', alignItems:'center', gap:12}}>
+        <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={prevMonth}><ChevronLeft size={16} /></button>
+        <strong style={{fontSize:16, minWidth:160, textAlign:'center'}}>{monthNames[month]} {year}</strong>
+        <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={nextMonth}><ChevronRight size={16} /></button>
+        <span style={{color:'var(--muted)', fontSize:12, marginLeft:8}}>{monthEvents.length} evento(s) neste mês</span>
+      </div>
+
+      {displayMode === 'grid' ? (
+        <>
+          <div className="cal-grid">
+            {dayNames.map((d) => <div key={d} className="cal-day-header">{d}</div>)}
+            {cells.map((cell, i) => (
+              <div key={i} className={`cal-day${cell.otherMonth ? ' other-month' : ''}${cell.isToday ? ' today' : ''}`}>
+                <div className="cal-day-num">{cell.day}</div>
+                {(cell.events || []).slice(0, 3).map((ev, ei) => (
+                  <div key={ei} className={`cal-event ${ev.type}${ev.status?.toLowerCase().includes('aprovado') || ev.status?.toLowerCase().includes('postado') ? '' : ' pendente'}`} title={`${ev.label} — ${ev.sub}`}>
+                    {ev.label}
+                  </div>
+                ))}
+                {(cell.events || []).length > 3 && <div style={{fontSize:10, color:'var(--muted)'}}>+{cell.events.length - 3}</div>}
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="cal-list">
+          {upcomingEvents.length === 0 && <div className="empty-box">Nenhum evento encontrado para este modo.</div>}
+          {upcomingEvents.map((ev, i) => {
+            const d = new Date(ev.date + 'T12:00:00')
+            return (
+              <div key={i} className="cal-list-item">
+                <div className="cal-list-date">
+                  <span className="day">{d.getDate()}</span>
+                  <span className="mon">{monthNames[d.getMonth()].slice(0,3)}</span>
+                </div>
+                <div className={`cal-event ${ev.type} pendente`} style={{padding:'4px 8px', borderRadius:6, fontSize:12, minWidth:80, textAlign:'center'}}>
+                  {viewLabels[viewMode].split(' ')[1]}
+                </div>
+                <div className="cal-list-info">
+                  <strong>{ev.label}</strong>
+                  <span>{ev.sub} {ev.status ? `· ${ev.status}` : ''}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function Teleprompter({ state }) {
+  const scripts = state.scripts || []
+  const clients = state.clients || []
+
+  // 1. Selecionar cliente primeiro
+  const [selectedClient, setSelectedClient] = useState(clients[0]?.name || '')
+  // 2. Depois filtrar roteiros desse cliente
+  const clientScripts = selectedClient
+    ? scripts.filter((s) => s.client === selectedClient || s.client_name === selectedClient)
+    : scripts
+  const [selected, setSelected] = useState('')
   const [font, setFont] = useState(42)
   const [speed, setSpeed] = useState(1)
   const [running, setRunning] = useState(false)
   const [mirror, setMirror] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const readerRef = useRef(null)
-  const script = scripts.find((item) => item.id === selected) || scripts[0]
+
+  // Quando cliente muda, reseta o roteiro para o primeiro do cliente
+  useEffect(() => {
+    setSelected(clientScripts[0]?.id || '')
+    setRunning(false)
+    if (readerRef.current) readerRef.current.scrollTop = 0
+  }, [selectedClient])
+
+  const script = clientScripts.find((item) => item.id === selected) || clientScripts[0]
   const text = `${script?.hook || ''}\n\nDesenvolvimento:\n${script?.body || '1. Mostre o problema de forma simples.\n2. Explique a causa provável sem prometer resultado.\n3. Traga uma orientação segura.'}\n\nCTA:\n${script?.cta || 'Se esse conteúdo fez sentido, envie para alguém que precisa ouvir isso hoje.'}`
 
   useEffect(() => {
@@ -1356,28 +1776,51 @@ function Teleprompter({ scripts }) {
     <section className={focusMode ? 'teleprompter-page focus' : 'teleprompter-page'}>
       <Panel title="Controle">
         <div className="form-grid">
-          <Select label="Roteiro" value={selected} onChange={setSelected} options={scripts.map((s) => ({ label: s.title, value: s.id }))} />
-          <Input label="Tamanho" type="number" value={font} onChange={setFont} />
+          {/* Passo 1: Cliente */}
+          <Select
+            label="1. Cliente"
+            value={selectedClient}
+            onChange={(v) => setSelectedClient(v)}
+            options={['', ...clients.map((c) => c.name)].map((n) => ({ label: n || 'Todos', value: n }))}
+          />
+          {/* Passo 2: Roteiro do cliente */}
+          <Select
+            label="2. Roteiro"
+            value={selected}
+            onChange={setSelected}
+            options={clientScripts.length
+              ? clientScripts.map((s) => ({ label: s.title, value: s.id }))
+              : [{ label: 'Nenhum roteiro encontrado', value: '' }]
+            }
+          />
+          <Input label="Tamanho da fonte" type="number" value={font} onChange={setFont} />
           <Input label="Velocidade" type="number" value={speed} onChange={setSpeed} />
-          <div className="button-row no-margin">
+          <div className="button-row no-margin span">
             <button className="primary" onClick={() => setRunning(!running)}>{running ? <Pause size={16} /> : <Play size={16} />}{running ? 'Pausar' : 'Iniciar'}</button>
-            <button className="secondary" onClick={() => { if (readerRef.current) readerRef.current.scrollTop = 0 }}><RefreshCw size={16} /> Reiniciar</button>
+            <button className="secondary" onClick={() => { if (readerRef.current) readerRef.current.scrollTop = 0; setRunning(false) }}><RefreshCw size={16} /> Reiniciar</button>
             <button className="secondary" onClick={() => setMirror(!mirror)}>Espelhar</button>
             <button className="secondary" onClick={() => setFocusMode(!focusMode)}>{focusMode ? 'Sair do foco' : 'Modo foco'}</button>
           </div>
         </div>
       </Panel>
-      <div className="teleprompter-stage">
-        <div className="read-line" />
-        <div ref={readerRef} className={mirror ? 'reader mirror' : 'reader'} style={{ fontSize: `${font}px` }}>
-          {text.split('\n').map((line, index) => <p key={index}>{line || ' '}</p>)}
+      {script ? (
+        <div className="teleprompter-stage">
+          <div className="read-line" />
+          <div ref={readerRef} className={mirror ? 'reader mirror' : 'reader'} style={{ fontSize: `${font}px` }}>
+            {text.split('\n').map((line, index) => <p key={index}>{line || ' '}</p>)}
+          </div>
+          <div className="teleprompter-footer">
+            <span>{script?.title}</span>
+            <strong>{running ? 'Lendo...' : 'Pausado'}</strong>
+            <span>{Math.ceil(text.length / 850)} min estimado</span>
+          </div>
         </div>
-        <div className="teleprompter-footer">
-          <span>{script?.title}</span>
-          <strong>{running ? 'Gravando leitura' : 'Pausado'}</strong>
-          <span>{Math.ceil(text.length / 850)} min estimado</span>
+      ) : (
+        <div className="empty-box" style={{textAlign:'center', padding:40}}>
+          <MonitorPlay size={32} style={{margin:'0 auto 12px', color:'var(--muted)', display:'block'}} />
+          Selecione um cliente com roteiros cadastrados para usar o teleprompter.
         </div>
-      </div>
+      )}
     </section>
   )
 }
@@ -1436,6 +1879,8 @@ function DebyAI({ state, addItem, updateItem }) {
           ...record,
           drive_folder_id: folderRes.folderId,
           drive_folder_url: folderRes.folderUrl,
+          edited_folder_id: folderRes.editedFolderId,
+          edited_folder_url: folderRes.editedFolderUrl,
           updatedAt: new Date().toISOString(),
         })
       }
@@ -1531,6 +1976,13 @@ function Conversas({ state, addItem }) {
   const [waConversations, setWaConversations] = useState([])
   const [messages, setMessages] = useState([])
   const [contactQuery, setContactQuery] = useState('')
+  const [contactId, setContactId] = useState('')
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [activeTemplate, setActiveTemplate] = useState('')
+  const bodyRef = useRef(null)
+
   const crmContacts = [
     ...state.leads.map((lead) => ({ ...lead, type: 'Lead', subtitle: `${lead.status} · ${lead.temp}`, last: lead.next || lead.notes })),
     ...state.clients.map((client) => ({ ...client, type: 'Cliente', subtitle: `${client.status} · ${client.plan}`, last: client.next || client.segment })),
@@ -1544,20 +1996,19 @@ function Conversas({ state, addItem }) {
       name: item.name || String(item.remote_jid || '').split('@')[0],
       profile_pic: item.profile_pic,
       type: 'WhatsApp',
-      subtitle: `Evolution · ${item.last_at ? dateTime(item.last_at) : 'sem data'}`,
-      last: item.last_message || 'Conversa sincronizada',
+      subtitle: `WhatsApp · ${item.last_at ? dateTime(item.last_at) : ''}`,
+      last: item.last_message || '',
       unread: item.unread || 0,
     })),
     ...crmContacts.filter((item) => !realPhones.has(String(item.phone || '').replace(/\D/g, ''))),
-  ].filter((item) => JSON.stringify(item).toLowerCase().includes(contactQuery.toLowerCase()))
-  const [contactId, setContactId] = useState('')
-  const [templateType, setTemplateType] = useState('Diagnóstico')
+  ].filter((item) => !contactQuery || JSON.stringify(item).toLowerCase().includes(contactQuery.toLowerCase()))
+
   const selected = contacts.find((item) => item.id === contactId) || contacts[0]
-  const [draft, setDraft] = useState('')
-  const message = draft || conversationTemplate(templateType, selected)
-  const [form, setForm] = useState({ name: '', channel: 'Conversas WhatsApp', status: 'Rascunho', trigger: 'Novo lead cadastrado' })
-  const [sending, setSending] = useState(false)
-  const [feedback, setFeedback] = useState('')
+
+  // Scroll para o fundo ao receber novas mensagens
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+  }, [messages])
 
   const refreshConversations = async () => {
     if (!isSupabaseConfigured) return
@@ -1566,21 +2017,18 @@ function Conversas({ state, addItem }) {
   }
 
   const syncContacts = async () => {
-    setFeedback('Sincronizando contatos da Evolution...')
-    const res = await whatsapp.syncContacts()
-    if (res.ok) {
-      setFeedback(`${res.imported || 0} contato(s) sincronizado(s).`)
-      refreshConversations()
-    } else setFeedback(`Erro ao sincronizar contatos: ${res.error}`)
+    setFeedback('Sincronizando...')
+    const res = await whatsapp.syncContacts?.()
+    if (res?.ok) { setFeedback(`${res.imported || 0} sincronizados.`); refreshConversations() }
+    else setFeedback(res?.error || 'Erro ao sincronizar')
+    setTimeout(() => setFeedback(''), 3000)
   }
 
-  useEffect(() => {
-    refreshConversations()
-  }, [])
+  useEffect(() => { refreshConversations() }, [])
 
   useEffect(() => {
     if (!contactId && contacts[0]?.id) setContactId(contacts[0].id)
-  }, [contacts[0]?.id, contactId])
+  }, [contacts[0]?.id])
 
   useEffect(() => {
     if (!selected?.remote_jid || !isSupabaseConfigured) { setMessages([]); return }
@@ -1589,114 +2037,187 @@ function Conversas({ state, addItem }) {
     return () => { alive = false }
   }, [selected?.remote_jid])
 
-  // Envia DE VERDADE pela Evolution API (via função serverless). Cai para o
-  // wa.me (abrir WhatsApp manualmente) se a API não responder.
-  const sendReal = async () => {
-    if (!selected?.phone) { setFeedback('Contato sem telefone.'); return }
-    const ok = window.confirm(`Enviar esta mensagem para ${selected.name || selected.phone}?`)
-    if (!ok) return
-    setSending(true); setFeedback('')
-    const res = await whatsapp.send(selected.phone, message)
+  const applyTemplate = (type) => {
+    setActiveTemplate(type === activeTemplate ? '' : type)
+    setDraft(conversationTemplate(type, selected))
+  }
+
+  const sendMessage = async () => {
+    const text = draft.trim()
+    if (!text || !selected?.phone) return
+    setSending(true)
+    const res = await whatsapp.send(selected.phone, text)
     setSending(false)
     if (res.ok) {
-      setFeedback('✅ Enviado pelo WhatsApp.')
+      const newMsg = { id: res.id || crypto.randomUUID(), from_me: true, content: text, message_type: 'text', ts: new Date().toISOString() }
+      setMessages((prev) => [...prev, newMsg])
       setDraft('')
-      if (selected.remote_jid) {
-        setMessages((current) => [...current, { id: res.id || crypto.randomUUID(), from_me: true, content: message, message_type: 'text', ts: new Date().toISOString() }])
-      }
+      setActiveTemplate('')
       refreshConversations()
+    } else {
+      setFeedback(`Falha: ${res.error}`)
+      setTimeout(() => setFeedback(''), 4000)
+      openWhatsApp(selected.phone, text)
     }
-    else { setFeedback(`⚠️ ${res.error}. Abrindo WhatsApp manual...`); openWhatsApp(selected.phone, message) }
   }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+  }
+
+  // Renderiza mídia na bolha
+  const renderMedia = (msg) => {
+    if (!msg.media_url) return null
+    const mime = msg.media_mime || ''
+    if (mime.startsWith('image/')) return <div className="msg-media"><img src={msg.media_url} alt="foto" /></div>
+    if (mime.startsWith('video/')) return <div className="msg-media"><video src={msg.media_url} controls /></div>
+    return <a className="msg-media-link" href={msg.media_url} target="_blank" rel="noreferrer"><Paperclip size={14} /> Abrir arquivo</a>
+  }
+
+  // Agrupa mensagens por dia
+  const groupedMessages = useMemo(() => {
+    const groups = []
+    let lastDay = ''
+    messages.forEach((msg) => {
+      const d = msg.ts ? new Date(msg.ts).toLocaleDateString('pt-BR') : ''
+      if (d !== lastDay) { groups.push({ type: 'divider', label: d }); lastDay = d }
+      groups.push({ type: 'msg', msg })
+    })
+    return groups
+  }, [messages])
+
+  const templates = ['Diagnóstico', 'Aprovação', 'Cobrança', 'Reativação']
+
   return (
     <section className="conversation-shell">
+      {/* Lista de contatos */}
       <aside className="conversation-list">
         <div className="conversation-sidebar-head">
           <div>
-            <p className="eyebrow">Conversas</p>
-            <h2>Caixa DBE</h2>
+            <p className="eyebrow" style={{margin:0, fontSize:11}}>Conversas</p>
+            <h2 style={{margin:0, fontSize:16}}>Caixa DBE</h2>
           </div>
-          <button className="icon-btn" title="Sincronizar contatos e conversas" onClick={syncContacts}><RefreshCw size={15} /></button>
+          <button className="icon-btn" title="Sincronizar" onClick={syncContacts}><RefreshCw size={15} /></button>
         </div>
-        <label className="search conversation-search">
-          <Search size={16} />
-          <input value={contactQuery} onChange={(event) => setContactQuery(event.target.value)} placeholder="Buscar contato" />
-        </label>
+        <div className="conversation-search">
+          <label className="search">
+            <Search size={15} />
+            <input value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} placeholder="Buscar contato..." />
+          </label>
+        </div>
         <div className="chat-list">
+          {contacts.length === 0 && <div style={{padding:16, color:'var(--muted)', fontSize:13}}>Nenhum contato encontrado.</div>}
           {contacts.map((contact) => (
-            <button key={contact.id} className={selected?.id === contact.id ? 'active' : ''} onClick={() => { setContactId(contact.id); setDraft('') }}>
-              <Avatar contact={contact} />
-              <div>
+            <button
+              key={contact.id}
+              className={selected?.id === contact.id ? 'active' : ''}
+              onClick={() => { setContactId(contact.id); setDraft(''); setActiveTemplate('') }}
+            >
+              <ContactAvatar contact={contact} />
+              <div className="chat-list-info">
                 <strong>{contact.name}</strong>
-                <small>{contact.subtitle}</small>
+                <small>{contact.last || contact.subtitle || ''}</small>
               </div>
-              <em>{contact.type}</em>
+              <div className="chat-list-meta">
+                {contact.unread > 0 && <span className="chat-unread">{contact.unread}</span>}
+                <span style={{fontSize:10, color:'var(--soft)'}}>{contact.type}</span>
+              </div>
             </button>
           ))}
         </div>
       </aside>
 
-      <main className="conversation-main">
+      {/* Área principal do chat */}
+      <div className="conversation-main">
+        {/* Header do chat */}
         <header className="chat-head">
-          <Avatar contact={selected || { name: 'DBE' }} />
-          <div>
+          <ContactAvatar contact={selected || { name: 'DBE' }} />
+          <div className="chat-head-info">
             <h2>{selected?.name || 'Selecione um contato'}</h2>
-            <p>{selected?.phone || 'WhatsApp ainda não cadastrado'} · {selected?.subtitle}</p>
+            <p>
+              {selected?.phone ? `+${selected.phone}` : 'sem telefone'}
+              {selected?.remote_jid ? ' · WhatsApp ativo' : ' · CRM'}
+            </p>
           </div>
-          <Badge text={selected?.remote_jid ? 'Evolution real' : 'CRM'} tone={selected?.remote_jid ? 'success' : 'blue'} />
-          <button className="icon-btn" title="Abrir no WhatsApp" onClick={() => selected && openWhatsApp(selected.phone, message)}><MessageCircle size={16} /></button>
+          <div className="chat-head-actions">
+            {feedback && <span style={{fontSize:12, color:'var(--green)', padding:'0 8px'}}>{feedback}</span>}
+            <button className="icon-btn" title="Copiar último" onClick={() => copyText(draft || messages.at(-1)?.content || '')}><Copy size={16} /></button>
+            <button className="icon-btn" title="Abrir no WhatsApp Web" onClick={() => selected && openWhatsApp(selected.phone, draft)}><MessageCircle size={16} /></button>
+          </div>
         </header>
 
-        <div className="chat-body">
-          {messages.length ? messages.map((msg) => (
-            <div key={msg.id || msg.wa_message_id || `${msg.ts}-${msg.content}`} className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'}`}>
-              <span>{msg.content || `[${msg.message_type || 'mensagem'}]`}</span>
-              {msg.media_url && <a href={msg.media_url} target="_blank" rel="noreferrer">Abrir mídia</a>}
-              <small>{msg.from_me ? 'Enviada' : 'Recebida'} · {dateTime(msg.ts)}</small>
-            </div>
-          )) : (
-            <>
-              <div className="message-bubble inbound">
-                <span>{selected?.last || 'Contato aguardando primeira mensagem.'}</span>
-                <small>{selected?.remote_jid ? 'Sem mensagens carregadas' : 'Dados do CRM'}</small>
+        {/* Mensagens */}
+        <div className="chat-body" ref={bodyRef}>
+          {groupedMessages.length === 0 && (
+            <div style={{textAlign:'center', padding:'40px 20px', color:'var(--muted)'}}>
+              <MessageCircle size={32} style={{marginBottom:12, opacity:0.4}} />
+              <div style={{fontSize:13}}>
+                {selected?.remote_jid ? 'Carregando mensagens...' : 'Contato do CRM — use um template para iniciar a conversa.'}
               </div>
-            </>
+            </div>
           )}
+          {groupedMessages.map((item, i) => {
+            if (item.type === 'divider') {
+              return <div key={i} className="msg-day-divider"><span>{item.label}</span></div>
+            }
+            const msg = item.msg
+            return (
+              <div
+                key={msg.id || msg.wa_message_id || `${msg.ts}-${i}`}
+                className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'}`}
+              >
+                <span className="msg-content">{msg.content || `[${msg.message_type || 'mensagem'}]`}</span>
+                {renderMedia(msg)}
+                <div className="msg-meta">
+                  <span className="msg-time">{msg.ts ? new Date(msg.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                  {msg.from_me && <span className="msg-status">✓✓</span>}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
-        <footer className="chat-compose">
-          <Select label="Modelo" value={templateType} onChange={(type) => { setTemplateType(type); setDraft('') }} options={['Diagnóstico', 'Aprovação', 'Cobrança', 'Reativação']} />
-          <textarea value={message} onChange={(event) => setDraft(event.target.value)} />
-          {feedback && <small className="muted-note">{feedback}</small>}
-          <button className="secondary" onClick={() => copyText(message)}><Copy size={16} /></button>
-          <button className="secondary" onClick={() => selected && openWhatsApp(selected.phone, message)} title="Abrir no WhatsApp Web"><MessageCircle size={16} /></button>
-          <button className="primary" onClick={sendReal} disabled={sending}><Send size={16} /> {sending ? 'Enviando...' : 'Enviar'}</button>
-        </footer>
-      </main>
+        {/* Templates rápidos */}
+        <div className="chat-template-bar">
+          {templates.map((t) => (
+            <button key={t} className={`chat-template-btn${activeTemplate === t ? ' active' : ''}`} onClick={() => applyTemplate(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
 
-      <aside className="conversation-tools">
-        <Panel title="Automações">
-          <div className="form-grid single">
-            <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-            <Input label="Gatilho" value={form.trigger} onChange={(trigger) => setForm({ ...form, trigger })} />
-            <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={['Rascunho', 'Pronto', 'Pausado']} />
-            <button className="primary" onClick={() => form.name && addItem('automations', form)}><Plus size={16} /> Criar</button>
-          </div>
-          <div className="stack-list">
-            {state.automations.map((item) => <ListItem key={item.id} title={item.name} meta={item.trigger} badge={item.status} />)}
-          </div>
-        </Panel>
-        <Panel title="Dados do contato">
-          {selected && <ActionList items={[
-            ['Tipo', selected.type],
-            ['Telefone', selected.phone || 'Não informado'],
-            ['Status', selected.status || '-'],
-            ['Origem/plano', selected.source || selected.plan || '-'],
-          ]} />}
-        </Panel>
-      </aside>
+        {/* Compose */}
+        <div className="chat-compose">
+          <button className="chat-compose-btn attach" title="Anexo"><Paperclip size={18} /></button>
+          <textarea
+            className="chat-compose-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Digite uma mensagem... (Enter para enviar)"
+            rows={1}
+          />
+          <button
+            className="chat-compose-btn send"
+            onClick={sendMessage}
+            disabled={sending || !draft.trim()}
+            title="Enviar"
+          >
+            <Send size={18} />
+          </button>
+        </div>
+      </div>
     </section>
   )
+}
+
+// Avatar de contato no estilo WhatsApp
+function ContactAvatar({ contact }) {
+  if (contact?.profile_pic) {
+    return <div className="chat-avatar"><img src={contact.profile_pic} alt={contact.name} /></div>
+  }
+  const initials = (contact?.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+  return <div className="chat-avatar" style={{fontSize:14}}>{initials}</div>
 }
 function Financeiro({ state, addItem, updateItem, metrics }) {
   const firstClient = state.clients[0]
@@ -2227,11 +2748,11 @@ function Panel({ title, action, onAction, children }) {
   )
 }
 
-function Modal({ title, open, onClose, children }) {
+function Modal({ title, open, onClose, children, wide = false }) {
   if (!open) return null
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section className="modal-panel">
+      <section className={wide ? 'modal-panel wide' : 'modal-panel'}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose}>×</button>
@@ -2602,6 +3123,32 @@ function mediaFilesToText(value) {
     return value.map((file) => file.url ? `${file.name || file.url} - ${file.url}` : (file.name || '')).filter(Boolean).join('\n')
   }
   return String(value)
+}
+
+function normalizeVideoReviews(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
+  }
+  return []
+}
+
+function getVideoReview(item, fileId) {
+  if (!fileId) return null
+  return normalizeVideoReviews(item?.video_reviews).find((review) => review.fileId === fileId) || null
+}
+
+function reviewLabel(status) {
+  const labels = {
+    approved: 'Aprovado',
+    changes_requested: 'Ajustes solicitados',
+    commented: 'Comentado',
+  }
+  return labels[status] || ''
 }
 
 function copyText(text) {

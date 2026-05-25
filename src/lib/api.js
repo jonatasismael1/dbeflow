@@ -68,6 +68,9 @@ export const drive = {
   getContentUploadUrl: (scriptId, folderId, fileName, mimeType) =>
     call('drive-upload-content-file', { scriptId, folderId, fileName, mimeType }),
 
+  listEditedFiles: (scriptId) =>
+    call('drive-list-edited-files', { scriptId }),
+
   // Retorna um upload_uri para o frontend fazer PUT direto no Drive (sem expor o access_token)
   getRawUploadUrl: (videoProjectId, rawFolderId, fileName, mimeType) =>
     call('drive-upload-raw-files', { videoProjectId, rawFolderId, fileName, mimeType }),
