@@ -1479,6 +1479,8 @@ function Conversas({ state, addItem }) {
   // wa.me (abrir WhatsApp manualmente) se a API não responder.
   const sendReal = async () => {
     if (!selected?.phone) { setFeedback('Contato sem telefone.'); return }
+    const ok = window.confirm(`Enviar esta mensagem para ${selected.name || selected.phone}?`)
+    if (!ok) return
     setSending(true); setFeedback('')
     const res = await whatsapp.send(selected.phone, message)
     setSending(false)
@@ -1543,10 +1545,6 @@ function Conversas({ state, addItem }) {
               <div className="message-bubble inbound">
                 <span>{selected?.last || 'Contato aguardando primeira mensagem.'}</span>
                 <small>{selected?.remote_jid ? 'Sem mensagens carregadas' : 'Dados do CRM'}</small>
-              </div>
-              <div className="message-bubble outbound">
-                <span>{conversationTemplate(templateType, selected)}</span>
-                <small>Modelo DBE</small>
               </div>
             </>
           )}
