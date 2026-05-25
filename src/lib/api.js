@@ -26,6 +26,8 @@ export const whatsapp = {
     call('whatsapp-send', { phone, mediaBase64, fileName, caption }),
   status: () => call('whatsapp-connect', { action: 'status' }),
   connect: () => call('whatsapp-connect', { action: 'connect' }),
+  setWebhook: (webhookUrl) => call('whatsapp-connect', { action: 'set_webhook', webhookUrl }),
+  syncContacts: () => call('whatsapp-sync-contacts'),
 }
 
 // --- Contratos ---

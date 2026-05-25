@@ -13,6 +13,7 @@ import {
 
 const APP_URL = process.env.APP_URL || 'https://dbeflow.netlify.app'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
+const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 
 export default async (req) => {
   const url = new URL(req.url)
@@ -54,6 +55,18 @@ export default async (req) => {
     })
     const profile = await profileRes.json().catch(() => ({}))
     const email = profile.email || ''
+
+    const folderRes = await fetch(
+      `${DRIVE_API}/files/${ROOT_FOLDER_ID}?fields=id,name,capabilities(canAddChildren),owners(emailAddress)&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+    )
+    const folder = await folderRes.json().catch(() => ({}))
+    if (!folderRes.ok) {
+      throw new Error(`A conta ${email || 'selecionada'} não acessa a pasta raiz do Drive. Compartilhe a pasta com essa conta e tente novamente.`)
+    }
+    if (folder.capabilities && folder.capabilities.canAddChildren === false) {
+      throw new Error(`A conta ${email} acessa a pasta "${folder.name}", mas não pode criar arquivos nela. Compartilhe como Editor.`)
+    }
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 

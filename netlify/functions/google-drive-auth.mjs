@@ -4,7 +4,9 @@
 // que o refresh_token seja sempre retornado (mesmo em reconexões).
 import { generateState, CLIENT_ID, REDIRECT_URI } from './lib/google-drive.mjs'
 
-const SCOPES = 'https://www.googleapis.com/auth/drive.file'
+// A pasta raiz já existe e pode ser de outra conta da equipe.
+// O escopo drive.file não acessa bem pastas compartilhadas pré-existentes.
+const SCOPES = 'https://www.googleapis.com/auth/drive'
 
 export default async (req) => {
   if (!CLIENT_ID) {

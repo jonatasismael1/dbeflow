@@ -90,12 +90,42 @@ function extractText(message) {
     || ''
 }
 
+function normalizeContact(contact) {
+  const remoteJid = contact?.remoteJid || contact?.id || contact?.jid || contact?.key?.remoteJid
+  if (!remoteJid || remoteJid.includes('@g.us')) return null
+  const phone = String(remoteJid).split('@')[0]
+  const name = contact?.name || contact?.pushName || contact?.notify || contact?.verifiedName || phone
+  return {
+    remote_jid: remoteJid,
+    phone,
+    name,
+    push_name: contact?.pushName || name,
+    profile_pic: contact?.profilePicUrl || contact?.profilePictureUrl || null,
+  }
+}
+
 export default async (req) => {
   if (!SB_URL || !SB_KEY) return json({ error: 'Supabase não configurado' }, 500)
   const payload = await req.json().catch(() => ({}))
 
   const event = payload.event || payload.type
   const data = payload.data || payload
+
+  if (event && event.toLowerCase().includes('contacts')) {
+    const contacts = Array.isArray(data) ? data : [data]
+    for (const item of contacts) {
+      const contact = normalizeContact(item)
+      if (!contact) continue
+      await upsert('wa_contacts', contact, 'remote_jid')
+      await upsert('wa_conversations', {
+        remote_jid: contact.remote_jid,
+        name: contact.name,
+        profile_pic: contact.profile_pic,
+        last_message: 'Contato sincronizado',
+        last_at: new Date().toISOString(),
+      }, 'remote_jid')
+    }
+  }
 
   if (event && event.toLowerCase().includes('messages')) {
     const msg = Array.isArray(data) ? data[0] : data

@@ -7,6 +7,8 @@ import {
   CalendarDays,
   Camera,
   Check,
+  ChevronDown,
+  ChevronRight,
   ClipboardCheck,
   Copy,
   Download,
@@ -23,6 +25,7 @@ import {
   MessageCircle,
   MonitorPlay,
   Pause,
+  Paperclip,
   Play,
   Plus,
   RefreshCw,
@@ -42,19 +45,22 @@ import { format } from 'date-fns'
 import './styles.css'
 import logo from './assets/logo-dbe.png'
 import { isSupabaseConfigured } from './lib/supabase'
-import { loadAll, insertItem, saveItem, deleteItem, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
+import { loadAll, insertItem, saveItem, deleteItem, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
 import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v1'
+const CONTENT_FORMATS = ['Reels', 'Roteiro de Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda', 'Ideia solta', 'Campanha', 'Outro']
+const CONTENT_STATUSES = ['Ideia', 'A produzir', 'Em produção', 'Roteiro pronto', 'Arte em criação', 'Aprovando', 'Aprovado', 'Postado', 'Pausado', 'Cancelado']
+const CONTENT_PRIORITIES = ['Baixa', 'Média', 'Alta', 'Urgente']
 
 const nav = [
-  { id: 'dashboard', label: 'Central', icon: LayoutDashboard },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clientes', label: 'Clientes', icon: Users },
   { id: 'crm', label: 'CRM', icon: Users },
   { id: 'diagnostico', label: 'Diagnóstico', icon: Gauge },
   { id: 'onboarding', label: 'Onboarding', icon: ClipboardCheck },
   { id: 'contratos', label: 'Contratos', icon: FileSignature },
-  { id: 'conteudo', label: 'Roteiros', icon: FileText },
+  { id: 'cronograma', label: 'Cronograma de Conteúdo', icon: CalendarDays },
   { id: 'teleprompter', label: 'Teleprompter', icon: MonitorPlay },
   { id: 'ai', label: 'Deby AI', icon: Sparkles },
   { id: 'instagram', label: 'Instagram', icon: Camera },
@@ -115,7 +121,6 @@ function App() {
     const params = new URLSearchParams(window.location.search)
     if (params.get('tab') === 'integracoes') {
       setActive('integracoes')
-      window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
 
@@ -212,8 +217,7 @@ function App() {
       <main>
         <header className="topbar">
           <div>
-            <p className="eyebrow">Sistema completo DBE</p>
-            <h1>{nav.find((item) => item.id === active)?.label || 'DBE Flow'}</h1>
+            <h1>{active === 'dashboard' ? 'Dashboard' : (nav.find((item) => item.id === active)?.label || 'DBE Flow')}</h1>
           </div>
           <div className="top-actions">
             <Badge text={isSupabaseConfigured ? (loading ? 'Sincronizando...' : 'Nuvem') : 'Local'} tone={isSupabaseConfigured ? 'success' : 'gold'} />
@@ -235,8 +239,9 @@ function App() {
         {active === 'onboarding' && <Onboarding state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'contratos' && <Contratos state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conteudo' && <Conteudo state={state} addItem={addItem} updateItem={updateItem} />}
+        {active === 'cronograma' && <CronogramaConteudo state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'teleprompter' && <Teleprompter scripts={state.scripts} />}
-        {active === 'ai' && <DebyAI state={state} />}
+        {active === 'ai' && <DebyAI state={state} addItem={addItem} />}
         {active === 'instagram' && <InstagramStudio state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
         {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
@@ -248,40 +253,35 @@ function App() {
 }
 
 function Dashboard({ state, metrics, setActive }) {
-  const cards = [
-    { label: 'Receita mensal gerida', value: money(metrics.monthly), icon: BadgeDollarSign, action: 'financeiro' },
-    { label: 'Pipeline comercial', value: money(metrics.pipeline), icon: Target, action: 'crm' },
-    { label: 'Posts em produção', value: metrics.pendingApprovals, icon: Megaphone, action: 'instagram' },
-    { label: 'Contas a receber', value: money(metrics.receivable), icon: WalletCards, action: 'financeiro' },
+  const scriptStages = [
+    'Ideias', 'Gravados', 'Em edição', 'Editados', 'Revisão',
+    'Aprovados', 'Falta agendamento', 'Agendados', 'Reprovados',
+  ]
+  const artStages = [
+    'Ideias aprovadas', 'Faltam fazer', 'Feitas', 'Aprovadas',
+    'Falta agendamento', 'Agendados', 'Reprovadas',
   ]
   return (
     <section className="page-grid">
-      <div className="hero-panel">
-        <div>
-          <p className="eyebrow">Central de comando</p>
-          <h2>DBE Flow junta operação, comercial, conteúdo, financeiro e automações em um só painel.</h2>
-          <p>O app nasce local-first para uso imediato e já deixa os pontos críticos preparados para deploy com Supabase, OpenAI/OpenRouter, Meta, Conversas/WhatsApp e Netlify.</p>
-        </div>
-        <div className="hero-stack">
-          <span>12 módulos integrados</span>
-          <strong>{state.clients.length + state.leads.length + state.scripts.length + state.posts.length}</strong>
-          <small>registros operacionais ativos</small>
-        </div>
-      </div>
-
-      <div className="kpi-grid">
-        {cards.map((card) => (
-          <button className="kpi-card" key={card.label} onClick={() => setActive(card.action)}>
-            <card.icon size={20} />
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
-          </button>
-        ))}
+      <div className="grid-4">
+        <MiniStat label="Receita mensal" value={money(metrics.monthly)} tone="success" />
+        <MiniStat label="Pipeline comercial" value={money(metrics.pipeline)} tone="gold" />
+        <MiniStat label="Contas a receber" value={money(metrics.receivable)} tone="blue" />
+        <MiniStat label="Pendências de conteúdo" value={metrics.pendingApprovals} tone="danger" />
       </div>
 
       <div className="grid-2">
         <Panel title="Funil comercial" action="Abrir CRM" onAction={() => setActive('crm')}>
           <Pipeline leads={state.leads} />
+        </Panel>
+        <Panel title="Roteiros" action="Abrir cronograma" onAction={() => setActive('cronograma')}>
+          <StatusFunnel stages={scriptStages} counts={countScriptStages(state.scripts, state.posts)} />
+        </Panel>
+      </div>
+
+      <div className="grid-2">
+        <Panel title="Artes" action="Abrir Instagram" onAction={() => setActive('instagram')}>
+          <StatusFunnel stages={artStages} counts={countArtStages(state.posts)} />
         </Panel>
         <Panel title="Agenda de produção" action="Instagram" onAction={() => setActive('instagram')}>
           <Timeline posts={state.posts} />
@@ -313,10 +313,79 @@ function Dashboard({ state, metrics, setActive }) {
 function Clientes({ state, addItem, updateItem, query }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(state.clients[0]?.id || '')
-  const [form, setForm] = useState({ name: '', phone: '', instagram: '', segment: '', plan: 'Autoridade Médica', status: 'Onboarding', monthly: 6200, owner: 'DBE', next: 'Briefing inicial' })
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    instagram: '',
+    segment: '',
+    plan: 'Autoridade Médica',
+    status: 'Onboarding',
+    monthly: 6200,
+    owner: 'DBE',
+    next: 'Briefing inicial',
+    payment_due: '',
+    payment_status: 'A receber',
+    billing_contact: '',
+    billing_phone: '',
+    billing_email: '',
+    contract_status: 'Pendente',
+    client_origin: 'Manual',
+    logo_url: '',
+    credentials: '',
+    personal_notes: '',
+    content_preferences: '',
+    recording_preferences: '',
+  })
   const clients = state.clients.filter((client) => JSON.stringify(client).toLowerCase().includes(query.toLowerCase()))
   const selected = state.clients.find((client) => client.id === selectedId) || state.clients[0]
   const selectedDiagnostics = (state.diagnostics || []).filter((item) => item.name === selected?.name || item.phone === selected?.phone)
+  const selectedInvoices = (state.invoices || []).filter((invoice) => invoice.client_id === selected?.id || invoice.client === selected?.name)
+  const [clientDraft, setClientDraft] = useState(selected || {})
+
+  useEffect(() => {
+    if (selected) setClientDraft({ ...selected })
+  }, [selected?.id])
+
+  const saveClientDetails = () => {
+    if (!selected?.id) return
+    updateItem('clients', selected.id, clientDraft)
+    const latestInvoice = selectedInvoices[0]
+    if (latestInvoice && clientDraft.payment_status) {
+      updateItem('invoices', latestInvoice.id, {
+        ...latestInvoice,
+        status: clientDraft.payment_status,
+        due: clientDraft.payment_due || latestInvoice.due,
+        billing_contact: clientDraft.billing_contact,
+        billing_phone: clientDraft.billing_phone,
+        billing_email: clientDraft.billing_email,
+      })
+    }
+  }
+
+  const createClientInvoice = () => {
+    if (!selected?.id) return
+    const due = clientDraft.payment_due || nextPaymentDate(clientDraft.payment_day)
+    addItem('invoices', {
+      client_id: selected.id,
+      client: clientDraft.name || selected.name,
+      due,
+      value: Number(clientDraft.monthly || selected.monthly || 0),
+      status: clientDraft.payment_status || 'A receber',
+      billing_contact: clientDraft.billing_contact || '',
+      billing_phone: clientDraft.billing_phone || clientDraft.phone || '',
+      billing_email: clientDraft.billing_email || '',
+    })
+    updateItem('clients', selected.id, { ...clientDraft, payment_due: due })
+  }
+
+  const markClientPayment = (status) => {
+    if (!selected?.id) return
+    const nextClient = { ...clientDraft, payment_status: status }
+    setClientDraft(nextClient)
+    updateItem('clients', selected.id, nextClient)
+    const latestInvoice = selectedInvoices[0]
+    if (latestInvoice) updateItem('invoices', latestInvoice.id, { ...latestInvoice, status })
+  }
 
   return (
     <section className="page-grid">
@@ -364,6 +433,54 @@ function Clientes({ state, addItem, updateItem, query }) {
                 <button className="secondary" onClick={() => copyText(JSON.stringify(selected, null, 2))}><Copy size={16} /> Copiar dados</button>
                 <button className="primary" onClick={() => updateItem('clients', selected.id, { status: selected.status === 'Ativo' ? 'Onboarding' : 'Ativo' })}><RefreshCw size={16} /> Alternar status</button>
               </div>
+              <div className="client-sections">
+                <section>
+                  <h3>Financeiro e cobrança</h3>
+                  <div className="form-grid">
+                    <Input label="Data de pagamento" type="date" value={clientDraft.payment_due || ''} onChange={(payment_due) => setClientDraft({ ...clientDraft, payment_due })} />
+                    <Select label="Status de pagamento" value={clientDraft.payment_status || 'A receber'} onChange={(payment_status) => setClientDraft({ ...clientDraft, payment_status })} options={['A receber', 'Pago', 'Atrasado']} />
+                    <Input label="Contato de cobrança" value={clientDraft.billing_contact || ''} onChange={(billing_contact) => setClientDraft({ ...clientDraft, billing_contact })} />
+                    <Input label="WhatsApp de cobrança" value={clientDraft.billing_phone || ''} onChange={(billing_phone) => setClientDraft({ ...clientDraft, billing_phone })} />
+                    <Input label="E-mail de cobrança" value={clientDraft.billing_email || ''} onChange={(billing_email) => setClientDraft({ ...clientDraft, billing_email })} />
+                    <Input label="Mensalidade" type="number" value={clientDraft.monthly || 0} onChange={(monthly) => setClientDraft({ ...clientDraft, monthly })} />
+                  </div>
+                  <div className="button-row compact">
+                    <button className="secondary" onClick={() => markClientPayment('Pago')}><Check size={14} /> Pago</button>
+                    <button className="secondary danger-text" onClick={() => markClientPayment('Atrasado')}><Activity size={14} /> Atrasado</button>
+                    <button className="secondary" onClick={createClientInvoice}><Plus size={14} /> Criar cobrança</button>
+                    <button className="primary" onClick={saveClientDetails}><Check size={14} /> Salvar</button>
+                  </div>
+                  {selectedInvoices.length ? (
+                    <div className="stack-list compact-stack">
+                      {selectedInvoices.map((invoice) => (
+                        <ListItem key={invoice.id} title={`${date(invoice.due)} · ${money(invoice.value)}`} meta={invoice.billing_contact || invoice.billing_phone || 'Cobrança vinculada ao financeiro'} badge={invoice.status} />
+                      ))}
+                    </div>
+                  ) : <div className="empty-box">Nenhuma cobrança vinculada ainda.</div>}
+                </section>
+
+                <section>
+                  <h3>Contrato e informações internas</h3>
+                  <div className="form-grid">
+                    <Select label="Contrato" value={clientDraft.contract_status || 'Pendente'} onChange={(contract_status) => setClientDraft({ ...clientDraft, contract_status })} options={['Pendente', 'Contrato preenchido', 'Sem contrato - confiança', 'Importado/legado']} />
+                    <Select label="Origem do cliente" value={clientDraft.client_origin || 'Manual'} onChange={(client_origin) => setClientDraft({ ...clientDraft, client_origin })} options={['Manual', 'Contrato', 'Importado/legado', 'Diagnóstico']} />
+                    <Input label="Logo (URL)" value={clientDraft.logo_url || ''} onChange={(logo_url) => setClientDraft({ ...clientDraft, logo_url })} />
+                    <Input label="Preferência de gravação" value={clientDraft.recording_preferences || ''} onChange={(recording_preferences) => setClientDraft({ ...clientDraft, recording_preferences })} />
+                    <label className="field span">
+                      <span>Preferências de conteúdo</span>
+                      <textarea className="textarea" value={clientDraft.content_preferences || ''} onChange={(event) => setClientDraft({ ...clientDraft, content_preferences: event.target.value })} />
+                    </label>
+                    <label className="field span">
+                      <span>Senhas e acessos</span>
+                      <textarea className="textarea" value={clientDraft.credentials || ''} onChange={(event) => setClientDraft({ ...clientDraft, credentials: event.target.value })} />
+                    </label>
+                    <label className="field span">
+                      <span>Informações pessoais</span>
+                      <textarea className="textarea" value={clientDraft.personal_notes || ''} onChange={(event) => setClientDraft({ ...clientDraft, personal_notes: event.target.value })} />
+                    </label>
+                  </div>
+                </section>
+              </div>
               <h3>Diagnósticos vinculados</h3>
               {selectedDiagnostics.length ? (
                 <div className="stack-list">
@@ -387,7 +504,33 @@ function Clientes({ state, addItem, updateItem, query }) {
           <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={['Onboarding', 'Ativo', 'Renovação', 'Pausado']} />
           <Input label="Mensalidade" type="number" value={form.monthly} onChange={(monthly) => setForm({ ...form, monthly })} />
           <Input label="Próxima ação" value={form.next} onChange={(next) => setForm({ ...form, next })} />
-          <button className="primary span" onClick={() => { if (form.name) { addItem('clients', form); setModalOpen(false) } }}><Plus size={16} /> Salvar cliente</button>
+          <Input label="Data de pagamento" type="date" value={form.payment_due} onChange={(payment_due) => setForm({ ...form, payment_due })} />
+          <Select label="Status de pagamento" value={form.payment_status} onChange={(payment_status) => setForm({ ...form, payment_status })} options={['A receber', 'Pago', 'Atrasado']} />
+          <Input label="Contato cobrança" value={form.billing_contact} onChange={(billing_contact) => setForm({ ...form, billing_contact })} />
+          <Input label="WhatsApp cobrança" value={form.billing_phone} onChange={(billing_phone) => setForm({ ...form, billing_phone })} />
+          <Select label="Contrato" value={form.contract_status} onChange={(contract_status) => setForm({ ...form, contract_status })} options={['Pendente', 'Contrato preenchido', 'Sem contrato - confiança', 'Importado/legado']} />
+          <Input label="Logo (URL)" value={form.logo_url} onChange={(logo_url) => setForm({ ...form, logo_url })} />
+          <label className="field span">
+            <span>Preferências de conteúdo e gravação</span>
+            <textarea className="textarea" value={`${form.content_preferences || ''}${form.recording_preferences ? `\nGravações: ${form.recording_preferences}` : ''}`} onChange={(event) => setForm({ ...form, content_preferences: event.target.value })} />
+          </label>
+          <button className="primary span" onClick={async () => {
+            if (!form.name) return
+            const client = await addItem('clients', form)
+            if (form.payment_due) {
+              await addItem('invoices', {
+                client_id: client.id,
+                client: client.name,
+                due: form.payment_due,
+                value: Number(form.monthly || 0),
+                status: form.payment_status || 'A receber',
+                billing_contact: form.billing_contact,
+                billing_phone: form.billing_phone || form.phone,
+                billing_email: form.billing_email,
+              })
+            }
+            setModalOpen(false)
+          }}><Plus size={16} /> Salvar cliente</button>
         </div>
       </Modal>
     </section>
@@ -719,6 +862,42 @@ function Contratos({ state, addItem, updateItem }) {
     setForm((f) => ({ ...f, nome, phone: c?.phone || f.phone }))
   }
 
+  const syncClientFromContract = async () => {
+    const due = nextPaymentDate(form.dia_pagamento)
+    const existing = state.clients.find((client) => client.name === form.nome || (form.phone && client.phone === form.phone))
+    const clientData = {
+      name: form.nome,
+      phone: form.phone,
+      segment: form.descricao_cliente,
+      plan: 'Contrato DBE',
+      status: 'Ativo',
+      monthly: Number(form.valor_parcela || 0),
+      owner: 'DBE',
+      next: 'Onboarding pós-contrato',
+      payment_due: due,
+      payment_status: 'A receber',
+      billing_phone: form.phone,
+      contract_status: 'Contrato preenchido',
+      client_origin: 'Contrato',
+      content_preferences: `${form.videos_mes} vídeos/mês · ${form.artes_mes} artes/mês`,
+    }
+    const client = existing
+      ? (updateItem('clients', existing.id, { ...existing, ...clientData }), { ...existing, ...clientData, id: existing.id })
+      : await addItem('clients', clientData)
+
+    const alreadyHasInvoice = state.invoices.some((invoice) => invoice.client_id === client.id && invoice.due === due)
+    if (!alreadyHasInvoice) {
+      await addItem('invoices', {
+        client_id: client.id,
+        client: client.name,
+        due,
+        value: Number(form.valor_parcela || 0),
+        status: 'A receber',
+        billing_phone: form.phone,
+      })
+    }
+  }
+
   const buildPayload = () => ({
     ...form,
     meses: Number(form.meses),
@@ -744,6 +923,7 @@ function Contratos({ state, addItem, updateItem }) {
     const res = await contract.generate({ ...buildPayload(), contract_id: id })
     setGenerating(false)
     if (!res.ok) { setFeedback(`Erro: ${res.error}`); return }
+    await syncClientFromContract()
     setLastBase64(res.base64)
     if (res.publicUrl && id) updateItem('contracts', id, { docx_url: res.publicUrl })
     // Dispara download automático
@@ -836,15 +1016,24 @@ function Contratos({ state, addItem, updateItem }) {
 }
 
 function Conteudo({ state, addItem, updateItem }) {
-  const [form, setForm] = useState({ title: '', client: state.clients[0]?.name || '', pillar: 'Autoridade', status: 'Rascunho', hook: '', body: '', cta: '' })
+  const firstClient = state.clients[0]
+  const [form, setForm] = useState({ title: '', client_id: firstClient?.id || '', client: firstClient?.name || '', pillar: 'Autoridade', format: 'Roteiro de Reels', status: 'Ideia', responsible: 'DBE', priority: 'Média', hook: '', body: '', cta: '', caption: '', notes: '', source: 'roteiros' })
+  const selectClient = (clientId) => {
+    const client = state.clients.find((item) => item.id === clientId)
+    setForm({ ...form, client_id: clientId, client: client?.name || form.client })
+  }
   const draft = buildScriptDraft(form)
   return (
     <section className="page-grid">
       <Panel title="Novo roteiro">
         <div className="form-grid">
           <Input label="Título" value={form.title} onChange={(title) => setForm({ ...form, title })} />
-          <Select label="Cliente" value={form.client} onChange={(client) => setForm({ ...form, client })} options={state.clients.map((c) => c.name)} />
+          <Select label="Cliente" value={form.client_id} onChange={selectClient} options={state.clients.map((c) => ({ label: c.name, value: c.id }))} />
           <Select label="Pilar" value={form.pillar} onChange={(pillar) => setForm({ ...form, pillar })} options={['Autoridade', 'Educação', 'Prova de método', 'Oferta', 'Bastidores']} />
+          <Select label="Formato" value={form.format} onChange={(format) => setForm({ ...form, format })} options={CONTENT_FORMATS} />
+          <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={CONTENT_STATUSES} />
+          <Select label="Prioridade" value={form.priority} onChange={(priority) => setForm({ ...form, priority })} options={CONTENT_PRIORITIES} />
+          <Input label="Responsável" value={form.responsible} onChange={(responsible) => setForm({ ...form, responsible })} />
           <Input label="Gancho" value={form.hook} onChange={(hook) => setForm({ ...form, hook })} />
           <label className="field">
             <span>Desenvolvimento</span>
@@ -853,7 +1042,7 @@ function Conteudo({ state, addItem, updateItem }) {
           <Input label="CTA" value={form.cta} onChange={(cta) => setForm({ ...form, cta })} />
           <button className="secondary" onClick={() => setForm({ ...form, ...suggestScript(form.pillar, form.client) })}><Wand2 size={16} /> Gerar base</button>
           <button className="secondary" onClick={() => copyText(draft)}><Copy size={16} /> Copiar roteiro</button>
-          <button className="primary span" onClick={() => form.title && addItem('scripts', form)}><Plus size={16} /> Salvar roteiro</button>
+          <button className="primary span" onClick={() => form.title && addItem('scripts', { ...form, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })}><Plus size={16} /> Salvar roteiro</button>
         </div>
       </Panel>
       <div className="cards-grid">
@@ -875,6 +1064,168 @@ function Conteudo({ state, addItem, updateItem }) {
           </article>
         ))}
       </div>
+    </section>
+  )
+}
+
+function CronogramaConteudo({ state, addItem, updateItem }) {
+  const [expanded, setExpanded] = useState({})
+  const [filters, setFilters] = useState({ query: '', client: 'Todos', format: 'Todos', status: 'Todos', responsible: 'Todos', month: 'Todos', priority: 'Todos', archived: false })
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState(() => emptyContentForm(state.clients))
+
+  const visibleClients = state.clients.filter((client) => filters.archived || !isArchivedClient(client))
+  const allContent = state.scripts.map((item) => normalizeContentItem(item, state.clients))
+  const responsibleOptions = unique(['Todos', 'DBE', ...allContent.map((item) => item.responsible).filter(Boolean), ...state.clients.map((client) => client.owner).filter(Boolean)])
+  const monthOptions = unique(['Todos', ...allContent.flatMap((item) => [item.delivery_date, item.post_date, item.cover_date]).filter(Boolean).map((value) => value.slice(0, 7))])
+  const filteredContent = allContent.filter((item) => contentMatchesFilters(item, filters, state.clients))
+  const groups = visibleClients.map((client) => ({
+    client,
+    items: filteredContent.filter((item) => contentBelongsToClient(item, client)),
+  }))
+
+  const openNew = (client) => {
+    setEditing(null)
+    setForm(emptyContentForm(state.clients, client))
+    setModalOpen(true)
+  }
+
+  const openEdit = (item) => {
+    setEditing(item)
+    setForm({ ...emptyContentForm(state.clients), ...item })
+    setModalOpen(true)
+  }
+
+  const saveContent = async () => {
+    if (!form.title) return
+    const client = state.clients.find((item) => item.id === form.client_id) || state.clients.find((item) => item.name === form.client)
+    const now = new Date().toISOString()
+    const payload = {
+      ...form,
+      client_id: client?.id || form.client_id || '',
+      client: client?.name || form.client || '',
+      source: form.source || (editing ? editing.source : 'cronograma'),
+      updatedAt: now,
+    }
+    if (editing?.id) updateItem('scripts', editing.id, payload)
+    else await addItem('scripts', { ...payload, createdAt: now })
+    setModalOpen(false)
+  }
+
+  return (
+    <section className="page-grid">
+      <div className="schedule-top">
+        <div>
+          <p className="eyebrow">Conteúdo por cliente</p>
+          <h2>Cronograma de Conteúdo</h2>
+        </div>
+        <button className="primary" onClick={() => openNew()}><Plus size={16} /> Novo conteúdo</button>
+      </div>
+
+      <Panel title="Filtros rápidos">
+        <div className="schedule-filters">
+          <label className="search">
+            <Search size={16} />
+            <input value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} placeholder="Buscar conteúdo, legenda, referência..." />
+          </label>
+          <Select label="Cliente" value={filters.client} onChange={(client) => setFilters({ ...filters, client })} options={['Todos', ...state.clients.map((client) => client.name)]} />
+          <Select label="Formato" value={filters.format} onChange={(format) => setFilters({ ...filters, format })} options={['Todos', ...CONTENT_FORMATS]} />
+          <Select label="Status" value={filters.status} onChange={(status) => setFilters({ ...filters, status })} options={['Todos', ...CONTENT_STATUSES]} />
+          <Select label="Responsável" value={filters.responsible} onChange={(responsible) => setFilters({ ...filters, responsible })} options={responsibleOptions} />
+          <Select label="Mês" value={filters.month} onChange={(month) => setFilters({ ...filters, month })} options={monthOptions.map((month) => month === 'Todos' ? month : { label: formatMonth(month), value: month })} />
+          <Select label="Prioridade" value={filters.priority} onChange={(priority) => setFilters({ ...filters, priority })} options={['Todos', ...CONTENT_PRIORITIES]} />
+          <button className={filters.archived ? 'secondary active' : 'secondary'} onClick={() => setFilters({ ...filters, archived: !filters.archived })}>Mostrar arquivados</button>
+        </div>
+      </Panel>
+
+      <div className="schedule-list">
+        {groups.map(({ client, items }) => {
+          const isOpen = expanded[client.id] ?? true
+          return (
+            <section className="schedule-group" key={client.id}>
+              <div className="group-head">
+                <button className="group-toggle" onClick={() => setExpanded({ ...expanded, [client.id]: !isOpen })}>
+                  {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  <div>
+                    <strong>{client.name}</strong>
+                    <span>{client.segment || client.plan || 'Projeto DBE'}</span>
+                  </div>
+                </button>
+                <Badge text={`${items.length} conteúdo(s)`} tone={items.length ? 'blue' : 'default'} />
+                <button className="ghost" onClick={() => openNew(client)}><Plus size={14} /> Adicionar</button>
+              </div>
+              {isOpen && (
+                <div className="group-body">
+                  {items.length ? (
+                    items.map((item) => (
+                      <button className="schedule-row" key={item.id} onClick={() => openEdit(item)}>
+                        <div className="content-title-cell">
+                          <strong>{item.title}</strong>
+                          <span>{item.reference_url || item.caption || item.notes || 'Sem detalhes adicionais'}</span>
+                        </div>
+                        <Badge text={item.format} tone={formatTone(item.format)} />
+                        <Badge text={item.status} tone={statusTone(item.status)} />
+                        <span>{item.responsible || '-'}</span>
+                        <span>{date(item.delivery_date)}</span>
+                        <span>{date(item.post_date)}</span>
+                        <Badge text={item.priority} tone={priorityTone(item.priority)} />
+                        <span className="attachment-cell">{item.media_files ? <Paperclip size={15} /> : null}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="empty-box schedule-empty">
+                      <span>Esse cliente ainda não tem conteúdos cadastrados.</span>
+                      <button className="secondary" onClick={() => openNew(client)}><Plus size={14} /> Adicionar primeiro conteúdo</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )
+        })}
+      </div>
+
+      <Modal title={editing ? 'Editar conteúdo' : 'Novo conteúdo'} open={modalOpen} onClose={() => setModalOpen(false)}>
+        <div className="content-modal">
+          <div className="form-grid">
+            <Select label="Cliente / Projeto" value={form.client_id} onChange={(client_id) => {
+              const client = state.clients.find((item) => item.id === client_id)
+              setForm({ ...form, client_id, client: client?.name || form.client })
+            }} options={state.clients.map((client) => ({ label: client.name, value: client.id }))} />
+            <Input label="Título do conteúdo" value={form.title || ''} onChange={(title) => setForm({ ...form, title })} />
+            <Select label="Formato" value={form.format || 'Roteiro de Reels'} onChange={(format) => setForm({ ...form, format })} options={CONTENT_FORMATS} />
+            <Select label="Status" value={form.status || 'Ideia'} onChange={(status) => setForm({ ...form, status })} options={CONTENT_STATUSES} />
+            <Input label="Responsável" value={form.responsible || ''} onChange={(responsible) => setForm({ ...form, responsible })} />
+            <Select label="Prioridade" value={form.priority || 'Média'} onChange={(priority) => setForm({ ...form, priority })} options={CONTENT_PRIORITIES} />
+            <Input label="Data de entrega" type="date" value={form.delivery_date || ''} onChange={(delivery_date) => setForm({ ...form, delivery_date })} />
+            <Input label="Data de postagem" type="date" value={form.post_date || ''} onChange={(post_date) => setForm({ ...form, post_date })} />
+            <Input label="Data da capa" type="date" value={form.cover_date || ''} onChange={(cover_date) => setForm({ ...form, cover_date })} />
+            <Input label="Referência" value={form.reference_url || ''} onChange={(reference_url) => setForm({ ...form, reference_url })} />
+            <label className="field span">
+              <span>Legenda</span>
+              <textarea className="textarea" value={form.caption || ''} onChange={(event) => setForm({ ...form, caption: event.target.value })} />
+            </label>
+            <label className="field span">
+              <span>Arquivos e mídia</span>
+              <textarea className="textarea" value={form.media_files || ''} onChange={(event) => setForm({ ...form, media_files: event.target.value })} placeholder="Cole links do Drive, referências ou nomes de arquivos." />
+            </label>
+            <label className="field span">
+              <span>Observações internas</span>
+              <textarea className="textarea" value={form.notes || ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+            </label>
+          </div>
+          <ActionList compact items={[
+            ['Criado em', dateTime(form.createdAt)],
+            ['Atualizado em', dateTime(form.updatedAt)],
+            ['Origem', form.source || 'cronograma'],
+          ]} />
+          <div className="button-row">
+            <button className="secondary" onClick={() => setModalOpen(false)}>Cancelar</button>
+            <button className="primary" onClick={saveContent}><Check size={16} /> Salvar conteúdo</button>
+          </div>
+        </div>
+      </Modal>
     </section>
   )
 }
@@ -928,12 +1279,18 @@ function Teleprompter({ scripts }) {
   )
 }
 
-function DebyAI({ state }) {
+function DebyAI({ state, addItem }) {
   const [input, setInput] = useState('Gerar roteiro para um médico que trava na câmera e precisa atrair paciente particular.')
   const [feature, setFeature] = useState('roteiro')
   const [output, setOutput] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [saveForm, setSaveForm] = useState({
+    client_id: state.clients[0]?.id || '',
+    format: 'Roteiro de Reels',
+    title: '',
+    priority: 'Média',
+  })
   // presets: [label, prompt, feature da IA]
   const presets = [
     ['Roteiro', 'Gerar roteiro para um médico que trava na câmera e precisa atrair paciente particular.', 'roteiro'],
@@ -949,6 +1306,27 @@ function DebyAI({ state }) {
     setBusy(false)
     if (res.ok) setOutput(res.text)
     else { setErr(res.error || 'Falha na IA'); setOutput(buildAiOutput(input, state)) }
+  }
+
+  const saveAsContent = async () => {
+    const client = state.clients.find((item) => item.id === saveForm.client_id) || state.clients[0]
+    if (!client || !saveForm.title) return
+    const now = new Date().toISOString()
+    await addItem('scripts', {
+      client_id: client.id,
+      client: client.name,
+      title: saveForm.title,
+      format: saveForm.format,
+      status: saveForm.format === 'Roteiro de Reels' ? 'Roteiro pronto' : 'Ideia',
+      responsible: 'DBE',
+      priority: saveForm.priority,
+      body: shown,
+      caption: feature === 'legenda' ? shown : '',
+      source: 'deby',
+      createdAt: now,
+      updatedAt: now,
+    })
+    setSaveForm({ ...saveForm, title: '' })
   }
 
   const shown = output || buildAiOutput(input, state)
@@ -967,6 +1345,16 @@ function DebyAI({ state }) {
           <button className="secondary" onClick={() => copyText(shown)}><Copy size={16} /> Copiar</button>
           <button className="secondary" onClick={() => downloadText('deby-ai-resposta.txt', shown)}><Download size={16} /> Baixar</button>
         </div>
+        <div className="quick-create">
+          <h3>Criar conteúdo</h3>
+          <div className="form-grid">
+            <Select label="Cliente" value={saveForm.client_id} onChange={(client_id) => setSaveForm({ ...saveForm, client_id })} options={state.clients.map((client) => ({ label: client.name, value: client.id }))} />
+            <Select label="Tipo" value={saveForm.format} onChange={(format) => setSaveForm({ ...saveForm, format })} options={['Roteiro de Reels', 'Carrossel', 'Post estático']} />
+            <Input label="Título" value={saveForm.title} onChange={(title) => setSaveForm({ ...saveForm, title })} />
+            <Select label="Prioridade" value={saveForm.priority} onChange={(priority) => setSaveForm({ ...saveForm, priority })} options={CONTENT_PRIORITIES} />
+            <button className="primary span" onClick={saveAsContent}><Plus size={16} /> Salvar no cronograma</button>
+          </div>
+        </div>
       </Panel>
       <Panel title="Resposta da Deby">
         <pre className="ai-output">{busy ? 'A Deby está pensando...' : shown}</pre>
@@ -976,8 +1364,8 @@ function DebyAI({ state }) {
 }
 
 function InstagramStudio({ state, addItem, updateItem }) {
-  const [form, setForm] = useState({ client: state.clients[0]?.name || '', network: 'Instagram', date: '2026-05-27T10:00', status: 'Produção', caption: '' })
-  const postStatuses = ['Produção', 'Revisão', 'Aprovado', 'Agendado', 'Publicado']
+  const [form, setForm] = useState({ client: state.clients[0]?.name || '', network: 'Instagram', date: '2026-05-27T10:00', status: 'Faltam fazer', caption: '' })
+  const postStatuses = ['Ideia aprovada', 'Faltam fazer', 'Feita', 'Aprovada', 'Falta agendamento', 'Agendado', 'Reprovada', 'Publicado']
   return (
     <section className="page-grid">
       <div className="grid-4">
@@ -1026,11 +1414,29 @@ function InstagramStudio({ state, addItem, updateItem }) {
 }
 
 function Conversas({ state, addItem }) {
-  const contacts = [
+  const [waConversations, setWaConversations] = useState([])
+  const [messages, setMessages] = useState([])
+  const [contactQuery, setContactQuery] = useState('')
+  const crmContacts = [
     ...state.leads.map((lead) => ({ ...lead, type: 'Lead', subtitle: `${lead.status} · ${lead.temp}`, last: lead.next || lead.notes })),
     ...state.clients.map((client) => ({ ...client, type: 'Cliente', subtitle: `${client.status} · ${client.plan}`, last: client.next || client.segment })),
   ]
-  const [contactId, setContactId] = useState(contacts[0]?.id || '')
+  const realPhones = new Set(waConversations.map((item) => String(item.remote_jid || '').split('@')[0]))
+  const contacts = [
+    ...waConversations.map((item) => ({
+      id: `wa:${item.remote_jid}`,
+      remote_jid: item.remote_jid,
+      phone: String(item.remote_jid || '').split('@')[0],
+      name: item.name || String(item.remote_jid || '').split('@')[0],
+      profile_pic: item.profile_pic,
+      type: 'WhatsApp',
+      subtitle: `Evolution · ${item.last_at ? dateTime(item.last_at) : 'sem data'}`,
+      last: item.last_message || 'Conversa sincronizada',
+      unread: item.unread || 0,
+    })),
+    ...crmContacts.filter((item) => !realPhones.has(String(item.phone || '').replace(/\D/g, ''))),
+  ].filter((item) => JSON.stringify(item).toLowerCase().includes(contactQuery.toLowerCase()))
+  const [contactId, setContactId] = useState('')
   const [templateType, setTemplateType] = useState('Diagnóstico')
   const selected = contacts.find((item) => item.id === contactId) || contacts[0]
   const [draft, setDraft] = useState('')
@@ -1039,6 +1445,36 @@ function Conversas({ state, addItem }) {
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState('')
 
+  const refreshConversations = async () => {
+    if (!isSupabaseConfigured) return
+    const rows = await loadConversations()
+    setWaConversations(rows)
+  }
+
+  const syncContacts = async () => {
+    setFeedback('Sincronizando contatos da Evolution...')
+    const res = await whatsapp.syncContacts()
+    if (res.ok) {
+      setFeedback(`${res.imported || 0} contato(s) sincronizado(s).`)
+      refreshConversations()
+    } else setFeedback(`Erro ao sincronizar contatos: ${res.error}`)
+  }
+
+  useEffect(() => {
+    refreshConversations()
+  }, [])
+
+  useEffect(() => {
+    if (!contactId && contacts[0]?.id) setContactId(contacts[0].id)
+  }, [contacts[0]?.id, contactId])
+
+  useEffect(() => {
+    if (!selected?.remote_jid || !isSupabaseConfigured) { setMessages([]); return }
+    let alive = true
+    loadMessages(selected.remote_jid).then((rows) => { if (alive) setMessages(rows) })
+    return () => { alive = false }
+  }, [selected?.remote_jid])
+
   // Envia DE VERDADE pela Evolution API (via função serverless). Cai para o
   // wa.me (abrir WhatsApp manualmente) se a API não responder.
   const sendReal = async () => {
@@ -1046,7 +1482,14 @@ function Conversas({ state, addItem }) {
     setSending(true); setFeedback('')
     const res = await whatsapp.send(selected.phone, message)
     setSending(false)
-    if (res.ok) { setFeedback('✅ Enviado pelo WhatsApp.'); setDraft('') }
+    if (res.ok) {
+      setFeedback('✅ Enviado pelo WhatsApp.')
+      setDraft('')
+      if (selected.remote_jid) {
+        setMessages((current) => [...current, { id: res.id || crypto.randomUUID(), from_me: true, content: message, message_type: 'text', ts: new Date().toISOString() }])
+      }
+      refreshConversations()
+    }
     else { setFeedback(`⚠️ ${res.error}. Abrindo WhatsApp manual...`); openWhatsApp(selected.phone, message) }
   }
   return (
@@ -1057,16 +1500,16 @@ function Conversas({ state, addItem }) {
             <p className="eyebrow">Conversas</p>
             <h2>Caixa DBE</h2>
           </div>
-          <Badge text="Evolution ready" tone="blue" />
+          <button className="icon-btn" title="Sincronizar contatos e conversas" onClick={syncContacts}><RefreshCw size={15} /></button>
         </div>
         <label className="search conversation-search">
           <Search size={16} />
-          <input placeholder="Buscar contato" />
+          <input value={contactQuery} onChange={(event) => setContactQuery(event.target.value)} placeholder="Buscar contato" />
         </label>
         <div className="chat-list">
           {contacts.map((contact) => (
             <button key={contact.id} className={selected?.id === contact.id ? 'active' : ''} onClick={() => { setContactId(contact.id); setDraft('') }}>
-              <span className="chat-avatar">{initials(contact.name)}</span>
+              <Avatar contact={contact} />
               <div>
                 <strong>{contact.name}</strong>
                 <small>{contact.subtitle}</small>
@@ -1079,23 +1522,34 @@ function Conversas({ state, addItem }) {
 
       <main className="conversation-main">
         <header className="chat-head">
-          <div className="chat-avatar">{initials(selected?.name || 'DBE')}</div>
+          <Avatar contact={selected || { name: 'DBE' }} />
           <div>
             <h2>{selected?.name || 'Selecione um contato'}</h2>
             <p>{selected?.phone || 'WhatsApp ainda não cadastrado'} · {selected?.subtitle}</p>
           </div>
-          <button className="secondary" onClick={() => selected && openWhatsApp(selected.phone, message)}><MessageCircle size={16} /> Abrir WhatsApp</button>
+          <Badge text={selected?.remote_jid ? 'Evolution real' : 'CRM'} tone={selected?.remote_jid ? 'success' : 'blue'} />
+          <button className="icon-btn" title="Abrir no WhatsApp" onClick={() => selected && openWhatsApp(selected.phone, message)}><MessageCircle size={16} /></button>
         </header>
 
         <div className="chat-body">
-          <div className="message-bubble inbound">
-            <span>{selected?.last || 'Contato aguardando primeira mensagem.'}</span>
-            <small>Entrada simulada</small>
-          </div>
-          <div className="message-bubble outbound">
-            <span>{conversationTemplate(templateType, selected)}</span>
-            <small>Modelo DBE</small>
-          </div>
+          {messages.length ? messages.map((msg) => (
+            <div key={msg.id || msg.wa_message_id || `${msg.ts}-${msg.content}`} className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'}`}>
+              <span>{msg.content || `[${msg.message_type || 'mensagem'}]`}</span>
+              {msg.media_url && <a href={msg.media_url} target="_blank" rel="noreferrer">Abrir mídia</a>}
+              <small>{msg.from_me ? 'Enviada' : 'Recebida'} · {dateTime(msg.ts)}</small>
+            </div>
+          )) : (
+            <>
+              <div className="message-bubble inbound">
+                <span>{selected?.last || 'Contato aguardando primeira mensagem.'}</span>
+                <small>{selected?.remote_jid ? 'Sem mensagens carregadas' : 'Dados do CRM'}</small>
+              </div>
+              <div className="message-bubble outbound">
+                <span>{conversationTemplate(templateType, selected)}</span>
+                <small>Modelo DBE</small>
+              </div>
+            </>
+          )}
         </div>
 
         <footer className="chat-compose">
@@ -1133,8 +1587,21 @@ function Conversas({ state, addItem }) {
   )
 }
 function Financeiro({ state, addItem, updateItem, metrics }) {
-  const [form, setForm] = useState({ client: state.clients[0]?.name || '', due: '2026-06-05', value: 6200, status: 'A receber' })
+  const firstClient = state.clients[0]
+  const [form, setForm] = useState({ client_id: firstClient?.id || '', client: firstClient?.name || '', due: firstClient?.payment_due || '2026-06-05', value: firstClient?.monthly || 6200, status: 'A receber', billing_contact: firstClient?.billing_contact || '', billing_phone: firstClient?.billing_phone || firstClient?.phone || '' })
   const overdue = state.invoices.filter((invoice) => invoice.status !== 'Pago' && new Date(invoice.due) < new Date())
+  const selectClient = (clientName) => {
+    const client = state.clients.find((item) => item.name === clientName)
+    setForm({
+      ...form,
+      client_id: client?.id || '',
+      client: clientName,
+      due: client?.payment_due || form.due,
+      value: client?.monthly || form.value,
+      billing_contact: client?.billing_contact || '',
+      billing_phone: client?.billing_phone || client?.phone || '',
+    })
+  }
   return (
     <section className="page-grid">
       <div className="grid-4">
@@ -1145,18 +1612,21 @@ function Financeiro({ state, addItem, updateItem, metrics }) {
       </div>
       <Panel title="Nova cobrança">
         <div className="form-grid">
-          <Select label="Cliente" value={form.client} onChange={(client) => setForm({ ...form, client })} options={state.clients.map((c) => c.name)} />
+          <Select label="Cliente" value={form.client} onChange={selectClient} options={state.clients.map((c) => c.name)} />
           <Input label="Vencimento" type="date" value={form.due} onChange={(due) => setForm({ ...form, due })} />
           <Input label="Valor" type="number" value={form.value} onChange={(value) => setForm({ ...form, value })} />
           <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={['A receber', 'Pago', 'Atrasado']} />
+          <Input label="Contato cobrança" value={form.billing_contact} onChange={(billing_contact) => setForm({ ...form, billing_contact })} />
+          <Input label="WhatsApp cobrança" value={form.billing_phone} onChange={(billing_phone) => setForm({ ...form, billing_phone })} />
           <button className="primary span" onClick={() => addItem('invoices', form)}><Plus size={16} /> Adicionar cobrança</button>
         </div>
       </Panel>
       <Panel title="Recebíveis">
-        <DataTable columns={['Cliente', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={state.invoices.map((i) => [
+        <DataTable columns={['Cliente', 'Vencimento', 'Valor', 'Contato', 'Status', 'Ações']} rows={state.invoices.map((i) => [
           i.client,
           date(i.due),
           money(i.value),
+          i.billing_contact || i.billing_phone || '-',
           <Badge text={i.status} tone={i.status === 'Pago' ? 'success' : i.status === 'Atrasado' ? 'danger' : 'gold'} />,
           <div className="row-actions">
             <button className="icon-btn" title="Marcar pago" onClick={() => updateItem('invoices', i.id, { status: 'Pago' })}><Check size={15} /></button>
@@ -1279,8 +1749,8 @@ function ProducaoVideo({ state, updateItem }) {
 
   if (!driveConn) return (
     <section className="page-grid">
-      <Panel title="Google Drive não conectado">
-        <p className="muted-note">Conecte sua conta Google para criar pastas por cliente, organizar projetos de vídeo e enviar arquivos diretamente para o Drive.</p>
+        <Panel title="Google Drive não conectado">
+        <p className="muted-note">Conecte a conta principal da agência para criar pastas por cliente, organizar projetos de vídeo e enviar arquivos diretamente para a pasta raiz compartilhada.</p>
         <div style={{ marginTop: 12 }}>
           <button className="primary" onClick={() => drive.startAuth()}><HardDrive size={16} /> Conectar Google Drive</button>
         </div>
@@ -1421,6 +1891,7 @@ function ProducaoVideo({ state, updateItem }) {
 function Integracoes() {
   const [waState, setWaState] = useState('—')
   const [qr, setQr] = useState('')
+  const [waMsg, setWaMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [igAccounts, setIgAccounts] = useState(null)
   const [igMsg, setIgMsg] = useState('')
@@ -1449,6 +1920,13 @@ function Integracoes() {
     if (res.ok && res.qr) setQr(res.qr.startsWith('data:') ? res.qr : `data:image/png;base64,${res.qr}`)
     else if (res.ok) { setWaState('open'); setQr('') }
     else setWaState(`erro: ${res.error}`)
+  }
+  const configureWaWebhook = async () => {
+    setBusy(true); setWaMsg('')
+    const webhookUrl = `${window.location.origin}/api/whatsapp-webhook`
+    const res = await whatsapp.setWebhook(webhookUrl)
+    setBusy(false)
+    setWaMsg(res.ok ? `Webhook configurado: ${webhookUrl}` : `Erro ao configurar webhook: ${res.error}`)
   }
   const checkMeta = async () => {
     setIgMsg('Buscando contas...')
@@ -1482,7 +1960,7 @@ function Integracoes() {
         <Panel title="Google Drive (produção de vídeo)">
           {driveConn ? (
             <>
-              <p className="muted-note">Conectado como <strong>{driveConn.google_account_email}</strong>.</p>
+              <p className="muted-note">Conta principal conectada: <strong>{driveConn.google_account_email}</strong>.</p>
               <p className="muted-note">Pasta raiz: <code>1-rHJ3bfsx4mvG6xXTpKiCtn1a1_R1Gg0</code></p>
               <div className="button-row" style={{ marginTop: 8 }}>
                 <button className="secondary" onClick={() => drive.startAuth()}><RefreshCw size={16} /> Reconectar</button>
@@ -1490,8 +1968,8 @@ function Integracoes() {
             </>
           ) : (
             <>
-              <p className="muted-note">Conecte uma conta Google para organizar a produção de vídeos por cliente. O acesso é limitado ao escopo <code>drive.file</code> — apenas arquivos criados pelo app.</p>
-              <p className="muted-note" style={{ color: 'var(--warning, #f59e0b)', marginTop: 4 }}>⚠️ Certifique-se de configurar <strong>GOOGLE_CLIENT_SECRET</strong> nas variáveis de ambiente da Netlify antes de conectar.</p>
+              <p className="muted-note">Conecte a conta principal da agência. A pasta raiz precisa estar compartilhada com essa conta como Editor.</p>
+              <p className="muted-note" style={{ color: 'var(--warning, #f59e0b)', marginTop: 4 }}>Certifique-se de configurar <strong>GOOGLE_CLIENT_SECRET</strong> e reconectar após liberar a pasta no Drive.</p>
               <button className="primary" style={{ marginTop: 8 }} onClick={() => drive.startAuth()}>
                 <HardDrive size={16} /> Conectar Google Drive
               </button>
@@ -1505,8 +1983,10 @@ function Integracoes() {
           <div className="button-row">
             <button className="secondary" onClick={checkWa} disabled={busy}><RefreshCw size={16} /> Verificar status</button>
             <button className="primary" onClick={connectWa} disabled={busy}><MessageCircle size={16} /> {busy ? 'Aguarde...' : 'Conectar / QR'}</button>
+            <button className="secondary" onClick={configureWaWebhook} disabled={busy}>Configurar webhook</button>
           </div>
           <p className="muted-note">Status atual: <strong>{waState}</strong></p>
+          {waMsg && <p className="muted-note">{waMsg}</p>}
           {qr && <img src={qr} alt="QR Code WhatsApp" style={{ width: 240, height: 240, marginTop: 12, borderRadius: 12, background: '#fff', padding: 8 }} />}
         </Panel>
       </div>
@@ -1600,6 +2080,12 @@ function Badge({ text, tone = 'default' }) {
   return <span className={`badge ${tone}`}>{text}</span>
 }
 
+function Avatar({ contact }) {
+  return contact?.profile_pic
+    ? <img className="chat-avatar" src={contact.profile_pic} alt={contact.name || 'Contato'} />
+    : <span className="chat-avatar">{initials(contact?.name || 'DBE')}</span>
+}
+
 function DataTable({ columns, rows }) {
   return (
     <div className="table-wrap">
@@ -1607,6 +2093,18 @@ function DataTable({ columns, rows }) {
         <thead><tr>{columns.map((col) => <th key={col}>{col}</th>)}</tr></thead>
         <tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, idx) => <td key={idx}>{cell}</td>)}</tr>)}</tbody>
       </table>
+    </div>
+  )
+}
+
+function StatusFunnel({ stages, counts }) {
+  const max = Math.max(1, ...stages.map((stage) => counts[stage] || 0))
+  return (
+    <div className="pipeline status-funnel">
+      {stages.map((stage) => {
+        const count = counts[stage] || 0
+        return <div key={stage}><span>{stage}</span><strong>{count}</strong><i style={{ width: `${Math.max(10, (count / max) * 100)}%` }} /></div>
+      })}
     </div>
   )
 }
@@ -1658,6 +2156,200 @@ function money(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
 }
 
+function emptyContentForm(clients = [], client) {
+  const selected = client || clients[0]
+  return {
+    client_id: selected?.id || '',
+    client: selected?.name || '',
+    title: '',
+    format: 'Roteiro de Reels',
+    status: 'Ideia',
+    responsible: selected?.owner || 'DBE',
+    delivery_date: '',
+    post_date: '',
+    cover_date: '',
+    reference_url: '',
+    caption: '',
+    priority: 'Média',
+    media_files: '',
+    notes: '',
+    source: 'cronograma',
+    createdAt: '',
+    updatedAt: '',
+  }
+}
+
+function normalizeContentItem(item, clients = []) {
+  const client = clients.find((row) => row.id === item.client_id) || clients.find((row) => row.name === item.client)
+  return {
+    ...item,
+    client_id: item.client_id || client?.id || '',
+    client: item.client || client?.name || 'Sem cliente',
+    title: item.title || item.caption || 'Sem título',
+    format: item.format || inferContentFormat(item),
+    status: normalizeContentStatus(item.status),
+    responsible: item.responsible || item.owner || 'DBE',
+    delivery_date: item.delivery_date || item.due || '',
+    post_date: item.post_date || item.date?.slice?.(0, 10) || '',
+    cover_date: item.cover_date || '',
+    reference_url: item.reference_url || item.reference || '',
+    caption: item.caption || item.cta || '',
+    priority: item.priority || 'Média',
+    media_files: item.media_files || item.media || '',
+    notes: item.notes || item.body || '',
+    source: item.source || 'roteiros',
+    createdAt: item.createdAt || item.created_at || '',
+    updatedAt: item.updatedAt || item.updated_at || '',
+  }
+}
+
+function inferContentFormat(item) {
+  if (item.network === 'Reels') return 'Reels'
+  if (item.network === 'Stories') return 'Stories'
+  if (item.pillar || item.hook || item.body) return 'Roteiro de Reels'
+  return 'Ideia solta'
+}
+
+function normalizeContentStatus(status = '') {
+  const normalized = normalizeStatus(status)
+  if (['rascunho', 'ideia'].includes(normalized)) return 'Ideia'
+  if (['a produzir', 'gravado'].includes(normalized)) return 'A produzir'
+  if (['em produção', 'producao', 'produção', 'em edição', 'em edicao'].includes(normalized)) return 'Em produção'
+  if (['roteiro pronto', 'editado'].includes(normalized)) return 'Roteiro pronto'
+  if (['arte em criação', 'arte em criacao'].includes(normalized)) return 'Arte em criação'
+  if (['aprovando', 'revisão', 'revisao', 'em revisão', 'em revisao'].includes(normalized)) return 'Aprovando'
+  if (['aprovado', 'aprovada', 'falta agendamento', 'agendado'].includes(normalized)) return 'Aprovado'
+  if (['postado', 'publicado'].includes(normalized)) return 'Postado'
+  if (['pausado'].includes(normalized)) return 'Pausado'
+  if (['cancelado', 'reprovado', 'reprovada'].includes(normalized)) return 'Cancelado'
+  return CONTENT_STATUSES.includes(status) ? status : 'Ideia'
+}
+
+function contentMatchesFilters(item, filters, clients) {
+  const client = clients.find((row) => row.id === item.client_id) || clients.find((row) => row.name === item.client)
+  const query = filters.query.trim().toLowerCase()
+  if (query && !JSON.stringify({ ...item, client: client?.name || item.client }).toLowerCase().includes(query)) return false
+  if (filters.client !== 'Todos' && item.client !== filters.client && client?.name !== filters.client) return false
+  if (filters.format !== 'Todos' && item.format !== filters.format) return false
+  if (filters.status !== 'Todos' && item.status !== filters.status) return false
+  if (filters.responsible !== 'Todos' && item.responsible !== filters.responsible) return false
+  if (filters.priority !== 'Todos' && item.priority !== filters.priority) return false
+  if (filters.month !== 'Todos' && ![item.delivery_date, item.post_date, item.cover_date].some((value) => value?.startsWith?.(filters.month))) return false
+  return true
+}
+
+function contentBelongsToClient(item, client) {
+  return item.client_id === client.id || item.client === client.name
+}
+
+function isArchivedClient(client) {
+  return ['Pausado', 'Arquivado', 'Inativo', 'Cancelado'].includes(client.status)
+}
+
+function unique(items) {
+  return [...new Set(items.filter(Boolean))]
+}
+
+function formatMonth(month) {
+  return format(new Date(`${month}-02T12:00:00`), 'MM/yyyy')
+}
+
+function formatTone(formatName) {
+  const map = {
+    Reels: 'danger',
+    'Roteiro de Reels': 'blue',
+    'Post estático': 'gold',
+    Carrossel: 'success',
+    Stories: 'blue',
+    Legenda: 'gold',
+    'Ideia solta': 'default',
+    Campanha: 'danger',
+    Outro: 'default',
+  }
+  return map[formatName] || 'default'
+}
+
+function statusTone(status) {
+  const map = {
+    Ideia: 'default',
+    'A produzir': 'gold',
+    'Em produção': 'blue',
+    'Roteiro pronto': 'success',
+    'Arte em criação': 'blue',
+    Aprovando: 'gold',
+    Aprovado: 'success',
+    Postado: 'success',
+    Pausado: 'default',
+    Cancelado: 'danger',
+  }
+  return map[status] || 'default'
+}
+
+function priorityTone(priority) {
+  return { Baixa: 'blue', Média: 'gold', Alta: 'danger', Urgente: 'danger' }[priority] || 'default'
+}
+
+function countScriptStages(scripts = [], posts = []) {
+  const counts = {
+    Ideias: 0,
+    Gravados: 0,
+    'Em edição': 0,
+    Editados: 0,
+    Revisão: 0,
+    Aprovados: 0,
+    'Falta agendamento': 0,
+    Agendados: posts.filter((post) => post.status === 'Agendado').length,
+    Reprovados: 0,
+  }
+  scripts.forEach((script) => {
+    const status = normalizeStatus(script.status)
+    if (['ideia', 'rascunho', 'a produzir'].includes(status)) counts.Ideias += 1
+    else if (status === 'gravado') counts.Gravados += 1
+    else if (['em edicao', 'em edição', 'producao', 'produção', 'em produção', 'arte em criação', 'arte em criacao'].includes(status)) counts['Em edição'] += 1
+    else if (['editado', 'roteiro pronto'].includes(status)) counts.Editados += 1
+    else if (['revisao', 'revisão', 'em revisao', 'em revisão', 'aprovando'].includes(status)) counts.Revisão += 1
+    else if (['aprovado', 'aprovada'].includes(status)) {
+      counts.Aprovados += 1
+      counts['Falta agendamento'] += 1
+    } else if (status === 'falta agendamento') counts['Falta agendamento'] += 1
+    else if (['agendado', 'postado', 'publicado'].includes(status)) counts.Agendados += 1
+    else if (['reprovado', 'reprovada', 'cancelado'].includes(status)) counts.Reprovados += 1
+    else counts.Ideias += 1
+  })
+  return counts
+}
+
+function countArtStages(posts = []) {
+  const counts = {
+    'Ideias aprovadas': 0,
+    'Faltam fazer': 0,
+    Feitas: 0,
+    Aprovadas: 0,
+    'Falta agendamento': 0,
+    Agendados: 0,
+    Reprovadas: 0,
+  }
+  posts.forEach((post) => {
+    const status = normalizeStatus(post.status)
+    if (['ideia aprovada', 'ideias aprovadas', 'aprovacao pauta', 'aprovação pauta'].includes(status)) counts['Ideias aprovadas'] += 1
+    else if (['faltam fazer', 'falta fazer', 'producao', 'produção'].includes(status)) counts['Faltam fazer'] += 1
+    else if (['feita', 'feito', 'editado', 'editada'].includes(status)) counts.Feitas += 1
+    else if (['aprovado', 'aprovada'].includes(status)) {
+      counts.Aprovadas += 1
+      counts['Falta agendamento'] += 1
+    } else if (status === 'falta agendamento') counts['Falta agendamento'] += 1
+    else if (status === 'agendado') counts.Agendados += 1
+    else if (['reprovado', 'reprovada'].includes(status)) counts.Reprovadas += 1
+    else if (['revisao', 'revisão', 'em revisao', 'em revisão'].includes(status)) counts.Feitas += 1
+    else counts['Faltam fazer'] += 1
+  })
+  return counts
+}
+
+function normalizeStatus(value = '') {
+  return String(value).trim().toLowerCase()
+}
+
 function initials(name = '') {
   return name
     .split(' ')
@@ -1670,6 +2362,14 @@ function initials(name = '') {
 
 function date(value) {
   return value ? format(new Date(`${value}T12:00:00`), 'dd/MM/yyyy') : '-'
+}
+
+function nextPaymentDate(day) {
+  const now = new Date()
+  const dueDay = Math.min(28, Math.max(1, Number(day || 5)))
+  const next = new Date(now.getFullYear(), now.getMonth(), dueDay)
+  if (next < now) next.setMonth(next.getMonth() + 1)
+  return format(next, 'yyyy-MM-dd')
 }
 
 function dateTime(value) {
@@ -1771,7 +2471,8 @@ function conversationTemplate(type, lead) {
 }
 
 function invoiceMessage(invoice) {
-  return `Olá ${invoice.client}, tudo bem?\n\nPassando para lembrar da cobrança DBE com vencimento em ${date(invoice.due)}, no valor de ${money(invoice.value)}.\n\nSe já tiver realizado, pode desconsiderar.`
+  const greeting = invoice.billing_contact || invoice.client
+  return `Olá ${greeting}, tudo bem?\n\nPassando para lembrar da cobrança DBE de ${invoice.client}, com vencimento em ${date(invoice.due)}, no valor de ${money(invoice.value)}.\n\nSe já tiver realizado, pode desconsiderar.`
 }
 
 createRoot(document.getElementById('root')).render(<App />)
