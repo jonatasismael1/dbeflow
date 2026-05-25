@@ -1,0 +1,22 @@
+# Dependências
+node_modules
+
+# Build
+dist
+.netlify
+
+# Ambiente / segredos (NUNCA versionar)
+.env
+.env.local
+.env.*.local
+credenciais-dbe-flow.txt
+credenciais*.txt
+credenciais*.md
+
+# Logs
+*.log
+vite.out.log
+vite.err.log
+
+# Sistema
+.DS_Store
