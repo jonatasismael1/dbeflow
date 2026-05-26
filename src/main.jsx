@@ -59,11 +59,12 @@ import {
 import { format } from 'date-fns'
 import './styles.css'
 import logo from './assets/logo-dbe.png'
+import { importedClients, importedScripts } from './data/importedData.js'
 import { isSupabaseConfigured } from './lib/supabase'
 import { loadAll, insertItem, saveItem, deleteItem, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
 import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
-const STORAGE_KEY = 'dbe-flow-state-v1'
+const STORAGE_KEY = 'dbe-flow-state-v2' // v2 = dados reais importados do Notion
 const AUTH_KEY = 'dbe-auth-v1'
 const THEME_KEY = 'dbe-theme-v1'
 
@@ -100,31 +101,11 @@ const nav = [
 const MOBILE_NAV = ['cronograma', 'calendario', 'financeiro', 'conversas']
 
 const seed = {
-  clients: [
-    { id: 'c1', name: 'Dra. Marina Lopes', phone: '5582999991001', instagram: '@dramarinalopes', segment: 'Dermatologia', plan: 'Autoridade Médica', status: 'Ativo', monthly: 6200, owner: 'DBE', next: 'Gravação quinzenal' },
-    { id: 'c2', name: 'Clínica Atrium', phone: '5582999991002', instagram: '@clinicaatrium', segment: 'Odontologia premium', plan: 'Performance', status: 'Onboarding', monthly: 7800, owner: 'Comercial', next: 'Aprovar tom de voz' },
-    { id: 'c3', name: 'Dr. Rafael Nunes', phone: '5582999991003', instagram: '@drrafaelnunes', segment: 'Ortopedia', plan: 'Conteúdo + Tráfego', status: 'Renovação', monthly: 5200, owner: 'Sucesso', next: 'Reunião de renovação' },
-  ],
-  leads: [
-    { id: 'l1', name: 'Dra. Helena Cruz', phone: '5582999990001', source: 'Diagnóstico', specialty: 'Nutrologia', value: 72000, status: 'Proposta', temp: 'Quente', next: 'Follow-up proposta', notes: 'Quer paciente particular e tem agenda instável.' },
-    { id: 'l2', name: 'Instituto Vitta', phone: '5582999990002', source: 'Instagram', specialty: 'Clínica multidisciplinar', value: 94000, status: 'Reunião', temp: 'Morno', next: 'Enviar diagnóstico', notes: 'Lead com maturidade, precisa organizar decisores.' },
-    { id: 'l3', name: 'Dr. Miguel Prado', phone: '5582999990003', source: 'Indicação', specialty: 'Cardiologia', value: 36000, status: 'Contato', temp: 'Frio', next: 'WhatsApp inicial', notes: 'Pediu exemplos antes de marcar call.' },
-  ],
-  scripts: [
-    { id: 's1', title: 'O erro que faz o paciente adiar a consulta', client: 'Dra. Marina Lopes', pillar: 'Autoridade', status: 'Aprovado', hook: 'Se o seu paciente só procura ajuda quando piora, sua comunicação está chegando tarde.', body: 'Explique que conteúdo precisa antecipar dúvidas e reduzir medo antes da consulta.', cta: 'Salve este vídeo para lembrar antes da próxima avaliação.' },
-    { id: 's2', title: 'Bastidores do planejamento de sorriso', client: 'Clínica Atrium', pillar: 'Prova de método', status: 'Em revisão', hook: 'Um sorriso previsível começa antes da cadeira odontológica.', body: 'Mostre etapas do planejamento, critérios e cuidados sem prometer resultado.', cta: 'Envie uma mensagem para entender se este planejamento faz sentido para você.' },
-    { id: 's3', title: 'Dor no joelho não é sentença', client: 'Dr. Rafael Nunes', pillar: 'Educação', status: 'Rascunho', hook: 'Nem toda dor no joelho significa cirurgia.', body: 'Fale sobre avaliação, histórico, exames e condutas progressivas.', cta: 'Procure avaliação se a dor limita sua rotina.' },
-  ],
-  posts: [
-    { id: 'p1', client: 'Dra. Marina Lopes', network: 'Instagram', date: '2026-05-24T10:00', status: 'Agendado', caption: 'Como identificar sinais que merecem avaliação dermatológica sem prometer resultado.' },
-    { id: 'p2', client: 'Clínica Atrium', network: 'Instagram', date: '2026-05-25T18:30', status: 'Revisão', caption: 'O que acontece por trás de um planejamento estético seguro.' },
-    { id: 'p3', client: 'Dr. Rafael Nunes', network: 'Reels', date: '2026-05-26T12:00', status: 'Produção', caption: 'Três cuidados para voltar ao treino com responsabilidade.' },
-  ],
-  invoices: [
-    { id: 'f1', client: 'Dra. Marina Lopes', due: '2026-05-28', value: 6200, status: 'A receber' },
-    { id: 'f2', client: 'Clínica Atrium', due: '2026-06-02', value: 7800, status: 'A receber' },
-    { id: 'f3', client: 'Dr. Rafael Nunes', due: '2026-05-20', value: 5200, status: 'Pago' },
-  ],
+  clients: importedClients,
+  leads: [],
+  scripts: importedScripts,
+  posts: [],
+  invoices: [],
   automations: [
     { id: 'a1', name: 'Lead quente do diagnóstico', channel: 'Conversas WhatsApp', status: 'Pronto', trigger: 'Novo lead com score acima de 70' },
     { id: 'a2', name: 'Aprovação de post', channel: 'WhatsApp + link', status: 'Rascunho', trigger: 'Post movido para revisão' },
@@ -132,10 +113,8 @@ const seed = {
   ],
   contracts: [],
   diagnostics: [],
-  briefings: [
-    { id: 'b1', client: 'Clínica Atrium', stage: 'Identidade', progress: 68, blocker: 'Falta tom de voz aprovado' },
-    { id: 'b2', client: 'Dra. Marina Lopes', stage: 'Calendário inicial', progress: 92, blocker: 'Validar datas de gravação' },
-  ],
+  briefings: [],
+  cronograma: [],
 }
 
 function App() {
