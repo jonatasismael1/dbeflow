@@ -44,15 +44,12 @@ export async function loadAll(seed) {
     return parsed ? { ...seed, ...parsed } : seed
   }
 
-  // Modo nuvem: carrega cada tabela do Supabase
+  // Modo nuvem: carrega cada tabela via RPC (bypassa schema cache do PostgREST)
   const state = { ...seed }
   for (const key of TABLES) state[key] = []
   await Promise.all(TABLES.map(async (key) => {
     const table = TABLE_MAP[key]
-    const { data, error } = await supabase
-      .from(table)
-      .select('id, data, created_at')
-      .order('created_at', { ascending: false })
+    const { data, error } = await supabase.rpc('dbe_fetch', { p_table: table })
     if (error) { console.warn('[db] erro ao carregar', table, error.message); return }
     state[key] = (data || []).map(fromRow)
   }))
