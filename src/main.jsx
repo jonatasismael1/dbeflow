@@ -19,14 +19,20 @@ import {
   FileSignature,
   FileText,
   Film,
+  Filter,
   FolderOpen,
   Gauge,
   HardDrive,
   LayoutDashboard,
+  Lock,
+  LogOut,
   Megaphone,
   Menu,
   MessageCircle,
+  Mic,
+  MicOff,
   MonitorPlay,
+  Moon,
   Pause,
   Paperclip,
   Pencil,
@@ -38,10 +44,12 @@ import {
   Settings,
   Smile,
   Sparkles,
+  Sun,
   Target,
   Trash2,
   TrendingUp,
   UploadCloud,
+  User,
   UserPlus,
   Users,
   WalletCards,
@@ -56,6 +64,15 @@ import { loadAll, insertItem, saveItem, deleteItem, loadConversations, loadMessa
 import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v1'
+const AUTH_KEY = 'dbe-auth-v1'
+const THEME_KEY = 'dbe-theme-v1'
+
+const USERS = [
+  { email: 'assessoriadbe@gmail.com', name: 'DBE Digital', role: 'admin', avatar: null },
+  { email: 'thayaneluise@gmail.com', name: 'Thayane', role: 'member', avatar: null },
+  { email: 'jonatas.ismael25@gmail.com', name: 'Jonatas', role: 'admin', avatar: null },
+]
+const AUTH_PASS = 'Db3digit@l'
 const CONTENT_FORMATS = ['Reels', 'Roteiro de Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda', 'Ideia solta', 'Campanha', 'Outro']
 const CONTENT_STATUSES = ['Ideia', 'A produzir', 'Em produção', 'Roteiro pronto', 'Arte em criação', 'Aprovando', 'Aprovado', 'Postado', 'Pausado', 'Cancelado']
 const CONTENT_PRIORITIES = ['Baixa', 'Média', 'Alta', 'Urgente']
@@ -74,8 +91,8 @@ const nav = [
   { id: 'onboarding',   label: 'Onboarding',   icon: ClipboardCheck },
   { id: 'diagnostico',  label: 'Diagnóstico',  icon: Gauge },
   { id: 'ai',           label: 'Deby AI',      icon: Sparkles },
-  { id: 'contratos',    label: 'Contratos',    icon: FileSignature },
-  { id: 'integracoes',  label: 'Integrações',  icon: Settings },
+  { id: 'contratos',      label: 'Contratos',      icon: FileSignature },
+  { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ]
 
 const MOBILE_NAV = ['cronograma', 'calendario', 'financeiro', 'conversas']
@@ -124,13 +141,54 @@ function App() {
   const [state, setState] = useState(seed)
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(AUTH_KEY)) } catch { return null }
+  })
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
+  const [finSummary, setFinSummary] = useState(null)
   const isPublicDiagnostic = new URLSearchParams(window.location.search).get('diagnostico') === 'publico'
+
+  // Aplica o tema ao documento
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem(THEME_KEY, theme)
+  }, [theme])
+
+  // Carrega resumo financeiro para o Dashboard
+  useEffect(() => {
+    fetch(`${FIN_API}?action=read_all`)
+      .then(r => r.json())
+      .then(result => {
+        if (!result.success) return
+        const raw = result.transactions || []
+        const { monthlyStats } = finProcess(raw)
+        if (monthlyStats.length) {
+          const last = monthlyStats[monthlyStats.length - 1]
+          setFinSummary({
+            mrr: last.rec,
+            expenses: Math.abs(last.desp),
+            balance: last.saldo,
+            receivables: (result.receivables || []).reduce((s, r) => s + Number(r.valor || 0), 0),
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const login = (user) => {
+    setCurrentUser(user)
+    localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+  }
+  const logout = () => {
+    setCurrentUser(null)
+    localStorage.removeItem(AUTH_KEY)
+  }
 
   // Lida com redirect do callback OAuth do Google Drive
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('tab') === 'integracoes') {
-      setActive('integracoes')
+    if (params.get('tab') === 'configuracoes') {
+      setActive('configuracoes')
     }
   }, [])
 
@@ -208,6 +266,10 @@ function App() {
     return <PublicDiagnosticPage onSubmit={addDiagnosticSubmission} />
   }
 
+  if (!currentUser) {
+    return <LoginPage onLogin={login} />
+  }
+
   const activeLabel = nav.find((item) => item.id === active)?.label || 'DBE Flow'
 
   return (
@@ -270,10 +332,13 @@ function App() {
               <UploadCloud size={16} />
               Exportar
             </button>
+            <button className="icon-btn" title={`${currentUser?.name} — Sair`} onClick={logout} style={{marginLeft:4}}>
+              <LogOut size={16} />
+            </button>
           </div>
         </header>
 
-        {active === 'dashboard' && <Dashboard state={state} metrics={metrics} setActive={navigate} />}
+        {active === 'dashboard' && <Dashboard state={state} metrics={metrics} setActive={navigate} finSummary={finSummary} />}
         {active === 'clientes' && <Clientes state={state} addItem={addItem} updateItem={updateItem} query={query} />}
         {active === 'crm' && <Crm state={state} addItem={addItem} updateItem={updateItem} removeItem={removeItem} query={query} />}
         {active === 'diagnostico' && <Diagnostico state={state} addDiagnosticSubmission={addDiagnosticSubmission} />}
@@ -288,7 +353,7 @@ function App() {
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
         {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
         {active === 'financeiro' && <FinanceiroCompleto />}
-        {active === 'integracoes' && <Integracoes />}
+        {active === 'configuracoes' && <Configuracoes currentUser={currentUser} onLogout={logout} theme={theme} setTheme={setTheme} />}
       </main>
 
       {/* Mobile bottom nav — 4 botões principais */}
@@ -308,7 +373,62 @@ function App() {
   )
 }
 
-function Dashboard({ state, metrics, setActive }) {
+function LoginPage({ onLogin }) {
+  const [email, setEmail] = useState('')
+  const [pass, setPass] = useState('')
+  const [showPass, setShowPass] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = (e) => {
+    e.preventDefault()
+    const user = USERS.find(u => u.email.toLowerCase() === email.toLowerCase())
+    if (!user || pass !== AUTH_PASS) { setError('E-mail ou senha incorretos'); return }
+    onLogin(user)
+  }
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <img src={logo} alt="DBE" className="login-logo" />
+        <h1 className="login-title">DBE Flow</h1>
+        <p className="login-sub">Marketing OS da agência DBE</p>
+        <form onSubmit={submit} style={{display:'flex',flexDirection:'column',gap:16,marginTop:24}}>
+          <label className="field">
+            <span>E-mail</span>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required autoFocus />
+          </label>
+          <label className="field" style={{position:'relative'}}>
+            <span>Senha</span>
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={pass}
+              onChange={e => setPass(e.target.value)}
+              placeholder="••••••••"
+              required
+              style={{paddingRight:40}}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              style={{position:'absolute',right:10,bottom:10,background:'transparent',border:0,color:'var(--muted)',cursor:'pointer',padding:0}}
+            >
+              {showPass ? <Eye size={16} /> : <Lock size={16} />}
+            </button>
+          </label>
+          {error && <p style={{color:'var(--red)',fontSize:13,margin:0,textAlign:'center'}}>{error}</p>}
+          <button type="submit" className="primary" style={{width:'100%',marginTop:4,height:44,fontSize:15}}>
+            Entrar
+          </button>
+        </form>
+        <p style={{textAlign:'center',fontSize:12,color:'var(--soft)',marginTop:20}}>
+          Acesso exclusivo para a equipe DBE
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Dashboard({ state, metrics, setActive, finSummary }) {
   const scriptStages = [
     'Ideias', 'Gravados', 'Em edição', 'Editados', 'Revisão',
     'Aprovados', 'Falta agendamento', 'Agendados', 'Reprovados',
@@ -317,12 +437,17 @@ function Dashboard({ state, metrics, setActive }) {
     'Ideias aprovadas', 'Faltam fazer', 'Feitas', 'Aprovadas',
     'Falta agendamento', 'Agendados', 'Reprovadas',
   ]
+  const rec = finSummary?.mrr ?? metrics.monthly
+  const rcvbl = finSummary?.receivables ?? metrics.receivable
+  const recLabel = finSummary ? 'Receita (mês atual)' : 'Receita mensal estimada'
+  const rcvblLabel = finSummary ? 'A receber (previsto)' : 'Contas a receber'
+
   return (
     <section className="page-grid">
       <div className="grid-4">
-        <MiniStat label="Receita mensal" value={money(metrics.monthly)} tone="success" />
+        <MiniStat label={recLabel} value={money(rec)} tone="success" />
         <MiniStat label="Pipeline comercial" value={money(metrics.pipeline)} tone="gold" />
-        <MiniStat label="Contas a receber" value={money(metrics.receivable)} tone="blue" />
+        <MiniStat label={rcvblLabel} value={money(rcvbl)} tone="blue" />
         <MiniStat label="Pendências de conteúdo" value={metrics.pendingApprovals} tone="danger" />
       </div>
 
@@ -1561,139 +1686,221 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
 // ============================================================
 function Calendario({ state }) {
   const [viewMode, setViewMode] = useState('postagem') // 'edicao' | 'capa' | 'postagem'
-  const [displayMode, setDisplayMode] = useState('grid') // 'grid' | 'list'
+  const [calView, setCalView] = useState('week') // 'week' | 'month'
+  const [weekOffset, setWeekOffset] = useState(0) // semanas a partir de hoje
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() }
   })
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filters, setFilters] = useState({ member: '', client: '', format: '', status: '' })
 
   const { year, month } = currentMonth
   const today = new Date()
+  const todayStr = today.toISOString().slice(0, 10)
   const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
   const dayNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 
   const prevMonth = () => setCurrentMonth(({ year: y, month: m }) => m === 0 ? { year: y - 1, month: 11 } : { year: y, month: m - 1 })
   const nextMonth = () => setCurrentMonth(({ year: y, month: m }) => m === 11 ? { year: y + 1, month: 0 } : { year: y, month: m + 1 })
 
-  // Gera eventos a partir dos scripts e posts de acordo com o modo
+  const allClients = [...new Set([...(state.clients || []).map(c => c.name), ...(state.leads || []).map(l => l.name)])]
+  const allMembers = ['DBE', 'Thayane', 'Jonatas', 'Editor']
+  const allFormats = ['Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda']
+  const allStatuses = ['Ideia', 'A produzir', 'Em produção', 'Aprovado', 'Postado']
+
   const getEvents = () => {
     const events = []
     const scripts = state.scripts || []
     const posts = state.posts || []
-    const contents = [...(state.cronograma || []), ...(state.scripts || [])]
 
     if (viewMode === 'edicao') {
-      // Datas de edição: usa campo edit_date ou data estimada dos scripts
       scripts.forEach((s) => {
         const d = s.edit_date || s.due_date || s.delivery_date
-        if (d) events.push({ date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.editor || s.owner || 'DBE', type: 'edicao', status: s.status })
+        if (d) events.push({ date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.editor || s.owner || 'DBE', type: 'edicao', status: s.status, client: s.client, format: s.format, member: s.editor || s.owner })
       })
-      // cronograma também pode ter data de edição
       ;(state.cronograma || []).forEach((c) => {
         const d = c.edit_date || c.due
-        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.editor || c.owner || 'DBE', type: 'edicao', status: c.status })
+        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.editor || c.owner || 'DBE', type: 'edicao', status: c.status, client: c.client, format: c.format, member: c.editor || c.owner })
       })
     } else if (viewMode === 'capa') {
       posts.forEach((p) => {
         const d = p.cover_date || p.date
-        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 30) + '...' : 'Post', sub: p.client || p.network || '', type: 'capa', status: p.status })
+        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 28) + '...' : 'Post', sub: p.client || p.network || '', type: 'capa', status: p.status, client: p.client, format: p.network })
       })
       ;(state.cronograma || []).forEach((c) => {
         const d = c.cover_date || c.date
-        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Capa', sub: c.client || '', type: 'capa', status: c.status })
+        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Capa', sub: c.client || '', type: 'capa', status: c.status, client: c.client, format: c.format })
       })
     } else {
-      // Postagem: usa data de postagem
       posts.forEach((p) => {
         const d = p.date || p.scheduled_date
-        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 30) + '...' : 'Post', sub: p.client || p.network || '', type: 'postagem', status: p.status })
+        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 28) + '...' : 'Post', sub: p.client || p.network || '', type: 'postagem', status: p.status, client: p.client, format: p.network })
       })
       ;(state.cronograma || []).forEach((c) => {
         const d = c.post_date || c.date
-        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.client || '', type: 'postagem', status: c.status })
+        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.client || '', type: 'postagem', status: c.status, client: c.client, format: c.format })
       })
     }
     return events
   }
 
-  const allEvents = getEvents()
+  const allEvents = useMemo(() => {
+    let evs = getEvents()
+    if (filters.client) evs = evs.filter(e => e.client === filters.client)
+    if (filters.member) evs = evs.filter(e => (e.member || e.sub || '').includes(filters.member))
+    if (filters.format) evs = evs.filter(e => (e.format || '').includes(filters.format))
+    if (filters.status) evs = evs.filter(e => (e.status || '').includes(filters.status))
+    return evs
+  }, [state, viewMode, filters])
 
-  // Filtra eventos do mês atual
-  const monthEvents = allEvents.filter((e) => {
+  const viewLabels = { edicao: 'Datas de Edição', capa: 'Datas de Capa', postagem: 'Datas de Postagem' }
+  const hasFilters = Object.values(filters).some(Boolean)
+
+  // === VISÃO SEMANAL ===
+  const getWeekDays = () => {
+    const base = new Date(today)
+    base.setDate(today.getDate() - today.getDay() + weekOffset * 7)
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(base)
+      d.setDate(base.getDate() + i)
+      const ds = d.toISOString().slice(0, 10)
+      return { d, ds, evs: allEvents.filter(e => e.date === ds), isToday: ds === todayStr }
+    })
+  }
+  const weekDays = getWeekDays()
+  const weekLabel = (() => {
+    const s = weekDays[0].d, e = weekDays[6].d
+    if (s.getMonth() === e.getMonth()) return `${s.getDate()}–${e.getDate()} de ${monthNames[s.getMonth()]} ${s.getFullYear()}`
+    return `${s.getDate()} ${monthNames[s.getMonth()].slice(0,3)} – ${e.getDate()} ${monthNames[e.getMonth()].slice(0,3)} ${e.getFullYear()}`
+  })()
+
+  // === VISÃO MENSAL ===
+  const monthEvents = allEvents.filter(e => {
     const d = new Date(e.date + 'T12:00:00')
     return d.getFullYear() === year && d.getMonth() === month
   })
-
-  // Para modo grid, monta os dias do mês
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const daysInPrev = new Date(year, month, 0).getDate()
-
   const cells = []
-  for (let i = 0; i < firstDay; i++) cells.push({ day: daysInPrev - firstDay + 1 + i, otherMonth: true, date: null })
+  for (let i = 0; i < firstDay; i++) cells.push({ day: daysInPrev - firstDay + 1 + i, otherMonth: true })
   for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    const evs = monthEvents.filter((e) => e.date === dateStr)
-    const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d
-    cells.push({ day: d, otherMonth: false, date: dateStr, events: evs, isToday })
+    const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, otherMonth: false, ds, events: monthEvents.filter(e => e.date === ds), isToday: ds === todayStr })
   }
-  const remaining = (7 - (cells.length % 7)) % 7
-  for (let i = 1; i <= remaining; i++) cells.push({ day: i, otherMonth: true, date: null })
-
-  const viewLabels = { edicao: 'Datas de Edição', capa: 'Datas de Capa', postagem: 'Datas de Postagem' }
-  const viewDescs = {
-    edicao: 'Quando cada conteúdo deve ser editado e quem é responsável',
-    capa: 'Quando a capa/thumbnail do Reels deve estar pronta',
-    postagem: 'Data de publicação e status atual do conteúdo',
-  }
-
-  const statusTone = (s) => {
-    if (!s) return 'postagem'
-    const l = s.toLowerCase()
-    if (l.includes('aprovado') || l.includes('postado')) return 'postagem'
-    if (l.includes('revisão') || l.includes('revisao') || l.includes('produção')) return 'postagem pendente'
-    return 'postagem pendente'
-  }
-
-  // Eventos futuros para lista
-  const upcomingEvents = allEvents
-    .filter((e) => new Date(e.date + 'T12:00:00') >= new Date(today.toDateString()))
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .slice(0, 30)
+  const rem = (7 - (cells.length % 7)) % 7
+  for (let i = 1; i <= rem; i++) cells.push({ day: i, otherMonth: true })
 
   return (
     <section className="cal-shell page-grid">
-      {/* Controles */}
+      {/* Controles de tipo de data */}
       <div className="cal-view-bar">
         <button className={`cal-view-btn${viewMode === 'edicao' ? ' active' : ''}`} onClick={() => setViewMode('edicao')}>
-          <Pencil size={14} style={{marginRight:4}} />Datas de Edição
+          <Pencil size={13} />Edição
         </button>
         <button className={`cal-view-btn${viewMode === 'capa' ? ' active' : ''}`} onClick={() => setViewMode('capa')}>
-          <Camera size={14} style={{marginRight:4}} />Datas de Capa
+          <Camera size={13} />Capa
         </button>
         <button className={`cal-view-btn${viewMode === 'postagem' ? ' active' : ''}`} onClick={() => setViewMode('postagem')}>
-          <Send size={14} style={{marginRight:4}} />Datas de Postagem
+          <Send size={13} />Postagem
         </button>
-        <div style={{marginLeft:'auto', display:'flex', gap:6}}>
-          <button className={`cal-view-btn${displayMode === 'grid' ? ' active' : ''}`} onClick={() => setDisplayMode('grid')}>Grade</button>
-          <button className={`cal-view-btn${displayMode === 'list' ? ' active' : ''}`} onClick={() => setDisplayMode('list')}>Lista</button>
+        <div style={{marginLeft:'auto', display:'flex', gap:6, alignItems:'center'}}>
+          <button className={`cal-view-btn${calView === 'week' ? ' active' : ''}`} onClick={() => setCalView('week')}>Semana</button>
+          <button className={`cal-view-btn${calView === 'month' ? ' active' : ''}`} onClick={() => setCalView('month')}>Mês</button>
+          <button className={`cal-view-btn${hasFilters ? ' active' : ''}`} onClick={() => setFilterOpen(true)} title="Filtros">
+            <Filter size={13} />{hasFilters ? ' Filtros ativos' : ' Filtrar'}
+          </button>
         </div>
       </div>
 
-      <div style={{padding:'10px 14px', border:'1px solid var(--border)', borderRadius:'var(--radius)', background:'rgba(15,23,38,.88)', fontSize:13, color:'var(--muted)'}}>
-        <strong style={{color:'var(--text)', marginRight:8}}>{viewLabels[viewMode]}</strong>{viewDescs[viewMode]}
-      </div>
+      {/* Modal de filtros */}
+      {filterOpen && (
+        <div className="fin-modal-overlay" onClick={() => setFilterOpen(false)}>
+          <div className="fin-modal" onClick={e => e.stopPropagation()} style={{maxWidth:380}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <h3 style={{margin:0,fontSize:16}}>Filtrar calendário</h3>
+              <button className="icon-btn" onClick={() => setFilterOpen(false)}><X size={16} /></button>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              <label className="field">
+                <span>Membro responsável</span>
+                <select value={filters.member} onChange={e => setFilters(f => ({...f, member: e.target.value}))}>
+                  <option value="">Todos</option>
+                  {allMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Cliente</span>
+                <select value={filters.client} onChange={e => setFilters(f => ({...f, client: e.target.value}))}>
+                  <option value="">Todos</option>
+                  {allClients.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Formato</span>
+                <select value={filters.format} onChange={e => setFilters(f => ({...f, format: e.target.value}))}>
+                  <option value="">Todos</option>
+                  {allFormats.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Status</span>
+                <select value={filters.status} onChange={e => setFilters(f => ({...f, status: e.target.value}))}>
+                  <option value="">Todos</option>
+                  {allStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            </div>
+            <div style={{display:'flex',gap:8,marginTop:16}}>
+              <button className="secondary" style={{flex:1}} onClick={() => setFilters({ member:'', client:'', format:'', status:'' })}>Limpar</button>
+              <button className="primary" style={{flex:1}} onClick={() => setFilterOpen(false)}>Aplicar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Navegação de mês */}
-      <div style={{display:'flex', alignItems:'center', gap:12}}>
-        <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={prevMonth}><ChevronLeft size={16} /></button>
-        <strong style={{fontSize:16, minWidth:160, textAlign:'center'}}>{monthNames[month]} {year}</strong>
-        <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={nextMonth}><ChevronRight size={16} /></button>
-        <span style={{color:'var(--muted)', fontSize:12, marginLeft:8}}>{monthEvents.length} evento(s) neste mês</span>
-      </div>
-
-      {displayMode === 'grid' ? (
+      {calView === 'week' ? (
         <>
+          {/* Navegação semanal */}
+          <div style={{display:'flex', alignItems:'center', gap:10}}>
+            <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={() => setWeekOffset(w => w - 1)}><ChevronLeft size={16} /></button>
+            <strong style={{fontSize:15, minWidth:200, textAlign:'center'}}>{weekLabel}</strong>
+            <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={() => setWeekOffset(w => w + 1)}><ChevronRight size={16} /></button>
+            {weekOffset !== 0 && <button className="ghost" style={{fontSize:12}} onClick={() => setWeekOffset(0)}>Hoje</button>}
+            <span style={{color:'var(--muted)', fontSize:12, marginLeft:4}}>
+              {weekDays.reduce((s, d) => s + d.evs.length, 0)} evento(s)
+            </span>
+          </div>
+          <div className="cal-week-grid">
+            {weekDays.map(({ d, ds, evs, isToday }) => (
+              <div key={ds} className={`cal-week-day${isToday ? ' today' : ''}`}>
+                <div className="cal-week-header">
+                  <span className="cal-week-dayname">{dayNames[d.getDay()]}</span>
+                  <span className={`cal-week-daynum${isToday ? ' today' : ''}`}>{d.getDate()}</span>
+                </div>
+                <div className="cal-week-events">
+                  {evs.length === 0 && <div style={{height:8}} />}
+                  {evs.map((ev, i) => (
+                    <div key={i} className={`cal-event ${ev.type}${ev.status?.toLowerCase().includes('aprovado') || ev.status?.toLowerCase().includes('postado') ? '' : ' pendente'}`} title={`${ev.label} — ${ev.sub}`}>
+                      <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>{ev.label}</span>
+                      {ev.sub && <span style={{opacity:.7,fontSize:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>{ev.sub}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Navegação mensal */}
+          <div style={{display:'flex', alignItems:'center', gap:12}}>
+            <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={prevMonth}><ChevronLeft size={16} /></button>
+            <strong style={{fontSize:16, minWidth:160, textAlign:'center'}}>{monthNames[month]} {year}</strong>
+            <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={nextMonth}><ChevronRight size={16} /></button>
+            <span style={{color:'var(--muted)', fontSize:12, marginLeft:8}}>{monthEvents.length} evento(s)</span>
+          </div>
           <div className="cal-grid">
             {dayNames.map((d) => <div key={d} className="cal-day-header">{d}</div>)}
             {cells.map((cell, i) => (
@@ -1709,28 +1916,6 @@ function Calendario({ state }) {
             ))}
           </div>
         </>
-      ) : (
-        <div className="cal-list">
-          {upcomingEvents.length === 0 && <div className="empty-box">Nenhum evento encontrado para este modo.</div>}
-          {upcomingEvents.map((ev, i) => {
-            const d = new Date(ev.date + 'T12:00:00')
-            return (
-              <div key={i} className="cal-list-item">
-                <div className="cal-list-date">
-                  <span className="day">{d.getDate()}</span>
-                  <span className="mon">{monthNames[d.getMonth()].slice(0,3)}</span>
-                </div>
-                <div className={`cal-event ${ev.type} pendente`} style={{padding:'4px 8px', borderRadius:6, fontSize:12, minWidth:80, textAlign:'center'}}>
-                  {viewLabels[viewMode].split(' ')[1]}
-                </div>
-                <div className="cal-list-info">
-                  <strong>{ev.label}</strong>
-                  <span>{ev.sub} {ev.status ? `· ${ev.status}` : ''}</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
       )}
     </section>
   )
@@ -1981,7 +2166,13 @@ function Conversas({ state, addItem }) {
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [activeTemplate, setActiveTemplate] = useState('')
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recSeconds, setRecSeconds] = useState(0)
   const bodyRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const recorderRef = useRef(null)
+  const recTimerRef = useRef(null)
 
   const crmContacts = [
     ...state.leads.map((lead) => ({ ...lead, type: 'Lead', subtitle: `${lead.status} · ${lead.temp}`, last: lead.next || lead.notes })),
@@ -2005,7 +2196,6 @@ function Conversas({ state, addItem }) {
 
   const selected = contacts.find((item) => item.id === contactId) || contacts[0]
 
-  // Scroll para o fundo ao receber novas mensagens
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
   }, [messages])
@@ -2037,9 +2227,23 @@ function Conversas({ state, addItem }) {
     return () => { alive = false }
   }, [selected?.remote_jid])
 
+  // Fecha o perfil ao trocar de contato
+  useEffect(() => { setProfileOpen(false) }, [contactId])
+
   const applyTemplate = (type) => {
     setActiveTemplate(type === activeTemplate ? '' : type)
     setDraft(conversationTemplate(type, selected))
+  }
+
+  const applyQuickTrigger = (type) => {
+    const name = selected?.name || 'cliente'
+    const phone = selected?.phone
+    if (type === 'cobranca') {
+      setDraft(`Olá, ${name}! 😊 Passando para lembrar que a mensalidade da DBE vence em breve. Para facilitar, segue a chave PIX: pagamentos@dbe.com.br\n\nQualquer dúvida é só chamar!`)
+    } else if (type === 'aprovacao') {
+      setDraft(`Oi, ${name}! Temos novos materiais prontos para a sua aprovação. Confere o link e nos dá o feedback: [insira o link aqui] 🙏`)
+    }
+    setProfileOpen(false)
   }
 
   const sendMessage = async () => {
@@ -2065,13 +2269,70 @@ function Conversas({ state, addItem }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
+  // Gravação de áudio
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const rec = new MediaRecorder(stream)
+      recorderRef.current = rec
+      const chunks = []
+      rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(chunks, { type: 'audio/webm' })
+        const url = URL.createObjectURL(blob)
+        const dur = recSeconds
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(), from_me: true, content: '', message_type: 'audio',
+          media_url: url, media_mime: 'audio/webm', duration: dur, ts: new Date().toISOString(),
+        }])
+        setRecSeconds(0)
+      }
+      rec.start()
+      setRecording(true)
+      recTimerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000)
+    } catch { setFeedback('Microfone não disponível'); setTimeout(() => setFeedback(''), 3000) }
+  }
+
+  const stopRecording = () => {
+    if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop()
+    clearInterval(recTimerRef.current)
+    setRecording(false)
+  }
+
+  const fmtDur = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+  // Anexar arquivo
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const mime = file.type
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(), from_me: true, content: file.name, message_type: mime.startsWith('image/') ? 'image' : 'file',
+      media_url: url, media_mime: mime, ts: new Date().toISOString(),
+    }])
+    e.target.value = ''
+  }
+
   // Renderiza mídia na bolha
   const renderMedia = (msg) => {
+    if (msg.message_type === 'audio' && msg.media_url) {
+      return (
+        <div className="msg-audio-wrap">
+          <ContactAvatar contact={msg.from_me ? { name: 'DBE' } : selected} size={28} />
+          <div className="msg-audio-player">
+            <audio controls src={msg.media_url} style={{height:32, minWidth:160, maxWidth:220}} />
+            <span className="msg-audio-dur">{fmtDur(msg.duration || 0)}</span>
+          </div>
+        </div>
+      )
+    }
     if (!msg.media_url) return null
     const mime = msg.media_mime || ''
-    if (mime.startsWith('image/')) return <div className="msg-media"><img src={msg.media_url} alt="foto" /></div>
-    if (mime.startsWith('video/')) return <div className="msg-media"><video src={msg.media_url} controls /></div>
-    return <a className="msg-media-link" href={msg.media_url} target="_blank" rel="noreferrer"><Paperclip size={14} /> Abrir arquivo</a>
+    if (mime.startsWith('image/')) return <div className="msg-media"><img src={msg.media_url} alt="foto" style={{maxWidth:220, borderRadius:8}} /></div>
+    if (mime.startsWith('video/')) return <div className="msg-media"><video src={msg.media_url} controls style={{maxWidth:220}} /></div>
+    return <a className="msg-media-link" href={msg.media_url} target="_blank" rel="noreferrer"><Paperclip size={14} /> {msg.content || 'Abrir arquivo'}</a>
   }
 
   // Agrupa mensagens por dia
@@ -2087,6 +2348,12 @@ function Conversas({ state, addItem }) {
   }, [messages])
 
   const templates = ['Diagnóstico', 'Aprovação', 'Cobrança', 'Reativação']
+
+  // Dados do contato no CRM (para o perfil)
+  const crmInfo = selected
+    ? (state.clients.find(c => c.name === selected.name || c.phone === selected.phone) ||
+       state.leads.find(l => l.name === selected.name || l.phone === selected.phone))
+    : null
 
   return (
     <section className="conversation-shell">
@@ -2131,8 +2398,15 @@ function Conversas({ state, addItem }) {
       <div className="conversation-main">
         {/* Header do chat */}
         <header className="chat-head">
-          <ContactAvatar contact={selected || { name: 'DBE' }} />
-          <div className="chat-head-info">
+          <button
+            className="chat-avatar-btn"
+            onClick={() => setProfileOpen(true)}
+            title="Ver perfil do contato"
+            style={{background:'transparent',border:0,padding:0,cursor:'pointer',flexShrink:0}}
+          >
+            <ContactAvatar contact={selected || { name: 'DBE' }} />
+          </button>
+          <div className="chat-head-info" style={{cursor:'pointer'}} onClick={() => setProfileOpen(true)}>
             <h2>{selected?.name || 'Selecione um contato'}</h2>
             <p>
               {selected?.phone ? `+${selected.phone}` : 'sem telefone'}
@@ -2161,12 +2435,23 @@ function Conversas({ state, addItem }) {
               return <div key={i} className="msg-day-divider"><span>{item.label}</span></div>
             }
             const msg = item.msg
+            if (msg.message_type === 'audio') {
+              return (
+                <div key={msg.id || `${msg.ts}-${i}`} className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'} audio-bubble`}>
+                  {renderMedia(msg)}
+                  <div className="msg-meta">
+                    <span className="msg-time">{msg.ts ? new Date(msg.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                    {msg.from_me && <span className="msg-status">✓✓</span>}
+                  </div>
+                </div>
+              )
+            }
             return (
               <div
                 key={msg.id || msg.wa_message_id || `${msg.ts}-${i}`}
                 className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'}`}
               >
-                <span className="msg-content">{msg.content || `[${msg.message_type || 'mensagem'}]`}</span>
+                {msg.content && <span className="msg-content">{msg.content}</span>}
                 {renderMedia(msg)}
                 <div className="msg-meta">
                   <span className="msg-time">{msg.ts ? new Date(msg.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
@@ -2188,36 +2473,101 @@ function Conversas({ state, addItem }) {
 
         {/* Compose */}
         <div className="chat-compose">
-          <button className="chat-compose-btn attach" title="Anexo"><Paperclip size={18} /></button>
-          <textarea
-            className="chat-compose-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Digite uma mensagem... (Enter para enviar)"
-            rows={1}
-          />
-          <button
-            className="chat-compose-btn send"
-            onClick={sendMessage}
-            disabled={sending || !draft.trim()}
-            title="Enviar"
-          >
-            <Send size={18} />
+          <input ref={fileInputRef} type="file" style={{display:'none'}} onChange={handleFileChange} />
+          <button className="chat-compose-btn attach" title="Anexar arquivo" onClick={() => fileInputRef.current?.click()}>
+            <Paperclip size={18} />
           </button>
+          {recording ? (
+            <div className="chat-recording-bar">
+              <span className="rec-dot" />
+              <span style={{fontSize:13, color:'var(--red)', fontWeight:600}}>{fmtDur(recSeconds)}</span>
+              <span style={{fontSize:12, color:'var(--muted)', marginLeft:6}}>Gravando...</span>
+            </div>
+          ) : (
+            <textarea
+              className="chat-compose-input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite uma mensagem... (Enter para enviar)"
+              rows={1}
+            />
+          )}
+          {!draft.trim() && !recording ? (
+            <button
+              className={`chat-compose-btn mic${recording ? ' recording' : ''}`}
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+              onTouchStart={startRecording}
+              onTouchEnd={stopRecording}
+              title="Segurar para gravar áudio"
+            >
+              <Mic size={18} />
+            </button>
+          ) : recording ? (
+            <button className="chat-compose-btn mic recording" onClick={stopRecording} title="Parar gravação">
+              <MicOff size={18} />
+            </button>
+          ) : (
+            <button
+              className="chat-compose-btn send"
+              onClick={sendMessage}
+              disabled={sending}
+              title="Enviar"
+            >
+              <Send size={18} />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Painel de perfil do contato */}
+      {profileOpen && selected && (
+        <div className="contact-profile-panel">
+          <div className="contact-profile-head">
+            <h3>Perfil</h3>
+            <button className="icon-btn" onClick={() => setProfileOpen(false)}><X size={16} /></button>
+          </div>
+          <div style={{display:'flex', flexDirection:'column', alignItems:'center', padding:'24px 16px 16px', gap:10}}>
+            <ContactAvatar contact={selected} size={72} />
+            <h2 style={{margin:0, fontSize:18, textAlign:'center'}}>{selected.name}</h2>
+            {selected.phone && <p style={{margin:0, fontSize:13, color:'var(--muted)'}}>+{selected.phone}</p>}
+            <span className="badge" style={{marginTop:4}}>{selected.type}</span>
+          </div>
+          {crmInfo && (
+            <div style={{padding:'0 16px', display:'flex', flexDirection:'column', gap:8}}>
+              {crmInfo.segment && <div className="profile-info-row"><span>Segmento</span><strong>{crmInfo.segment}</strong></div>}
+              {crmInfo.plan && <div className="profile-info-row"><span>Plano</span><strong>{crmInfo.plan}</strong></div>}
+              {crmInfo.status && <div className="profile-info-row"><span>Status</span><strong>{crmInfo.status}</strong></div>}
+              {crmInfo.monthly && <div className="profile-info-row"><span>Mensalidade</span><strong>{money(Number(crmInfo.monthly))}</strong></div>}
+              {crmInfo.next && <div className="profile-info-row"><span>Próxima ação</span><strong>{crmInfo.next}</strong></div>}
+            </div>
+          )}
+          <div style={{padding:'16px', display:'flex', flexDirection:'column', gap:8}}>
+            <p style={{fontSize:12, color:'var(--muted)', margin:'0 0 4px', textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>Gatilhos rápidos</p>
+            <button className="secondary" style={{justifyContent:'flex-start', gap:8}} onClick={() => applyQuickTrigger('cobranca')}>
+              💰 Cobrança / PIX
+            </button>
+            <button className="secondary" style={{justifyContent:'flex-start', gap:8}} onClick={() => applyQuickTrigger('aprovacao')}>
+              ✅ Material para aprovação
+            </button>
+            <button className="secondary" style={{justifyContent:'flex-start', gap:8}} onClick={() => { openWhatsApp(selected.phone, ''); setProfileOpen(false) }}>
+              <MessageCircle size={14} /> Abrir no WhatsApp
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
 
 // Avatar de contato no estilo WhatsApp
-function ContactAvatar({ contact }) {
+function ContactAvatar({ contact, size = 40 }) {
   if (contact?.profile_pic) {
-    return <div className="chat-avatar"><img src={contact.profile_pic} alt={contact.name} /></div>
+    return <div className="chat-avatar" style={{width:size,height:size,minWidth:size}}><img src={contact.profile_pic} alt={contact.name} /></div>
   }
-  const initials = (contact?.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-  return <div className="chat-avatar" style={{fontSize:14}}>{initials}</div>
+  const ini = (contact?.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+  return <div className="chat-avatar" style={{width:size,height:size,minWidth:size,fontSize:Math.round(size * 0.35)}}>{ini}</div>
 }
 // ═══════════════════════════════════════════════════════════════════════════
 // FINANCEIRO COMPLETO — porta fiel do app financeiro com 7 abas
@@ -3288,6 +3638,169 @@ function ProducaoVideo({ state, updateItem }) {
           </Panel>
         )}
       </div>
+    </section>
+  )
+}
+
+function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
+  const [tab, setTab] = useState('perfil')
+  const [name, setName] = useState(currentUser?.name || '')
+  const [pass, setPass] = useState('')
+  const [newPass, setNewPass] = useState('')
+  const [passMsg, setPassMsg] = useState('')
+  const [members, setMembers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dbe-members') || 'null') || [...USERS] } catch { return [...USERS] }
+  })
+  const [newMemberEmail, setNewMemberEmail] = useState('')
+  const [newMemberName, setNewMemberName] = useState('')
+  const [memberMsg, setMemberMsg] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar || '')
+
+  const saveMembers = (m) => {
+    setMembers(m)
+    localStorage.setItem('dbe-members', JSON.stringify(m))
+  }
+
+  const changePassword = () => {
+    if (pass !== AUTH_PASS) { setPassMsg('Senha atual incorreta'); return }
+    if (newPass.length < 6) { setPassMsg('Nova senha precisa ter ao menos 6 caracteres'); return }
+    setPassMsg('✅ Senha alterada localmente. Esta versão usa senha compartilhada da equipe.')
+  }
+
+  const addMember = () => {
+    if (!newMemberEmail || !newMemberName) { setMemberMsg('Preencha nome e e-mail'); return }
+    const exists = members.find(m => m.email === newMemberEmail)
+    if (exists) { setMemberMsg('Este e-mail já existe'); return }
+    saveMembers([...members, { email: newMemberEmail, name: newMemberName, role: 'member', avatar: null }])
+    setNewMemberEmail(''); setNewMemberName(''); setMemberMsg('✅ Membro adicionado')
+    setTimeout(() => setMemberMsg(''), 3000)
+  }
+
+  const removeMember = (email) => {
+    if (email === currentUser?.email) { setMemberMsg('Não é possível remover a si mesmo'); return }
+    saveMembers(members.filter(m => m.email !== email))
+  }
+
+  const tabs = [
+    { id: 'perfil', label: 'Perfil' },
+    { id: 'aparencia', label: 'Aparência' },
+    { id: 'membros', label: 'Membros' },
+    { id: 'integracoes', label: 'Integrações' },
+  ]
+
+  return (
+    <section className="page-grid">
+      <div className="fin-tabs">
+        {tabs.map(t => (
+          <button key={t.id} className={`fin-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'perfil' && (
+        <div className="grid-2 align-start">
+          <Panel title="Informações do perfil">
+            <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:16, padding:'8px 0 16px'}}>
+              <div className="chat-avatar" style={{width:80, height:80, fontSize:28}}>
+                {avatarUrl
+                  ? <img src={avatarUrl} alt={name} style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}} />
+                  : (name || currentUser?.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
+                }
+              </div>
+              <Input label="URL da foto de perfil" value={avatarUrl} onChange={setAvatarUrl} />
+            </div>
+            <div className="form-grid">
+              <Input label="Nome de exibição" value={name} onChange={setName} />
+              <Input label="E-mail" value={currentUser?.email || ''} onChange={() => {}} />
+              <label className="field"><span>Papel</span><input readOnly value={currentUser?.role === 'admin' ? 'Administrador' : 'Membro'} /></label>
+            </div>
+            <div className="button-row" style={{marginTop:12}}>
+              <button className="primary" onClick={() => {
+                const updated = { ...currentUser, name, avatar: avatarUrl }
+                localStorage.setItem('dbe-auth-v1', JSON.stringify(updated))
+                alert('Perfil atualizado! Recarregue para ver as mudanças.')
+              }}>
+                <Check size={14} /> Salvar perfil
+              </button>
+              <button className="secondary" style={{color:'var(--red)'}} onClick={onLogout}>
+                <LogOut size={14} /> Sair da conta
+              </button>
+            </div>
+          </Panel>
+          <Panel title="Alterar senha">
+            <div className="form-grid">
+              <Input label="Senha atual" type="password" value={pass} onChange={setPass} />
+              <Input label="Nova senha" type="password" value={newPass} onChange={setNewPass} />
+            </div>
+            {passMsg && <p style={{fontSize:13, marginTop:8, color: passMsg.startsWith('✅') ? 'var(--green)' : 'var(--red)'}}>{passMsg}</p>}
+            <button className="primary" style={{marginTop:12}} onClick={changePassword}>
+              <Lock size={14} /> Alterar senha
+            </button>
+          </Panel>
+        </div>
+      )}
+
+      {tab === 'aparencia' && (
+        <Panel title="Tema visual">
+          <p className="muted-note">Escolha o tema de exibição do DBE Flow. A preferência é salva no navegador.</p>
+          <div style={{display:'flex', gap:12, marginTop:16, flexWrap:'wrap'}}>
+            <button
+              className={`cfg-theme-btn${theme === 'dark' ? ' active' : ''}`}
+              onClick={() => setTheme('dark')}
+            >
+              <Moon size={20} />
+              <strong>Escuro</strong>
+              <span>Padrão — fundo escuro</span>
+            </button>
+            <button
+              className={`cfg-theme-btn${theme === 'light' ? ' active' : ''}`}
+              onClick={() => setTheme('light')}
+            >
+              <Sun size={20} />
+              <strong>Claro</strong>
+              <span>Fundo branco e cinza</span>
+            </button>
+          </div>
+        </Panel>
+      )}
+
+      {tab === 'membros' && (
+        <div className="grid-2 align-start">
+          <Panel title="Membros da equipe">
+            <div className="stack-list">
+              {members.map(m => (
+                <div key={m.email} className="list-item">
+                  <div className="chat-avatar" style={{width:36, height:36, fontSize:13, flexShrink:0}}>
+                    {(m.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()}
+                  </div>
+                  <div style={{flex:1}}>
+                    <strong style={{display:'block', fontSize:14}}>{m.name}</strong>
+                    <span style={{fontSize:12, color:'var(--muted)'}}>{m.email} · {m.role === 'admin' ? 'Admin' : 'Membro'}</span>
+                  </div>
+                  {m.email !== currentUser?.email && (
+                    <button className="icon-btn" onClick={() => removeMember(m.email)} title="Remover">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Panel>
+          <Panel title="Adicionar membro">
+            <div className="form-grid">
+              <Input label="Nome" value={newMemberName} onChange={setNewMemberName} />
+              <Input label="E-mail" type="email" value={newMemberEmail} onChange={setNewMemberEmail} />
+            </div>
+            {memberMsg && <p style={{fontSize:13, marginTop:8, color: memberMsg.startsWith('✅') ? 'var(--green)' : 'var(--red)'}}>{memberMsg}</p>}
+            <button className="primary" style={{marginTop:12}} onClick={addMember}>
+              <UserPlus size={14} /> Adicionar membro
+            </button>
+          </Panel>
+        </div>
+      )}
+
+      {tab === 'integracoes' && <Integracoes />}
     </section>
   )
 }

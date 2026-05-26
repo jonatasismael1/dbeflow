@@ -28,6 +28,7 @@ body {
     var(--bg);
   color: var(--text);
   font-family: "DM Sans", system-ui, sans-serif;
+  transition: background 0.3s, color 0.3s;
 }
 
 button, input, select, textarea {
@@ -2377,4 +2378,429 @@ td small {
   .hero-stack strong { font-size: 48px; }
   .cal-grid { grid-template-columns: repeat(7, 1fr); }
   .cal-day-header { font-size: 9px; }
+}
+
+/* ===== TEMA CLARO ===== */
+[data-theme="light"] {
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f7;
+  --surface-3: #e4e9f2;
+  --border: rgba(30, 60, 110, 0.13);
+  --border-strong: rgba(30, 60, 110, 0.24);
+  --text: #19243a;
+  --muted: #4b5e7a;
+  --soft: #8094b0;
+  --blue: #2472cc;
+  --green: #0fa96a;
+  --gold: #c9940d;
+  --red: #d94040;
+  --purple: #7c5ce8;
+  color-scheme: light;
+}
+
+[data-theme="light"] body {
+  background:
+    linear-gradient(180deg, rgba(36,114,204,0.06), transparent 320px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.018) 0 1px, transparent 1px 80px),
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.013) 0 1px, transparent 1px 80px),
+    var(--bg);
+}
+
+[data-theme="light"] .sidebar {
+  background: rgba(255,255,255,.97);
+  border-right-color: var(--border);
+}
+
+[data-theme="light"] .mobile-top-bar,
+[data-theme="light"] .mobile-bottom-nav,
+[data-theme="light"] .mobile-drawer {
+  background: rgba(255,255,255,.98);
+}
+
+[data-theme="light"] .panel,
+[data-theme="light"] .mini-stat {
+  background: var(--surface);
+}
+
+[data-theme="light"] .chat-body {
+  background: #e8edf5;
+}
+
+[data-theme="light"] .message-bubble.outbound {
+  background: #d2f5e3;
+  color: #143322;
+}
+
+[data-theme="light"] .message-bubble.inbound {
+  background: #ffffff;
+  color: var(--text);
+}
+
+[data-theme="light"] .sidebar nav button:hover,
+[data-theme="light"] .sidebar nav button.active {
+  background: var(--surface-2);
+  color: var(--blue);
+}
+
+/* ===== LOGIN PAGE ===== */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, rgba(59,143,232,.12) 0%, rgba(21,199,122,.06) 100%),
+    var(--bg);
+  padding: 20px;
+}
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+
+.login-logo {
+  width: 56px;
+  height: 56px;
+  display: block;
+  margin: 0 auto 16px;
+  object-fit: contain;
+}
+
+.login-title {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 32px;
+  text-align: center;
+  margin: 0 0 4px;
+}
+
+.login-sub {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ===== CONVERSAS: PERFIL LATERAL ===== */
+.conversation-shell {
+  position: relative;
+}
+
+.contact-profile-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 280px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: slideInRight 0.2s ease;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.contact-profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.contact-profile-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.profile-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.profile-info-row span { color: var(--muted); }
+.profile-info-row strong { color: var(--text); }
+
+/* ===== GRAVAÇÃO DE ÁUDIO ===== */
+.chat-recording-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: rgba(239,96,96,.06);
+  border-radius: 8px;
+  min-height: 40px;
+}
+
+.rec-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse-red 1s infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.chat-compose-btn.mic {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.chat-compose-btn.mic:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.chat-compose-btn.mic.recording {
+  background: rgba(239,96,96,.15);
+  color: var(--red);
+}
+
+/* ===== ÁUDIO BUBBLE ===== */
+.msg-audio-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.msg-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.msg-audio-dur {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-bubble.audio-bubble {
+  background: transparent !important;
+  box-shadow: none;
+  padding: 4px 0;
+  max-width: 280px;
+}
+
+/* ===== CALENDÁRIO SEMANAL ===== */
+.cal-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cal-week-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cal-week-day.today {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px rgba(21,199,122,.2);
+}
+
+.cal-week-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  gap: 4px;
+}
+
+.cal-week-dayname {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.cal-week-daynum {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.cal-week-daynum.today {
+  background: var(--green);
+  color: #fff;
+}
+
+.cal-week-events {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.cal-week-events .cal-event {
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  line-height: 1.3;
+}
+
+/* ===== CONFIGURAÇÕES — SELETOR DE TEMA ===== */
+.cfg-theme-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 24px;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  min-width: 120px;
+  transition: all 0.15s;
+}
+
+.cfg-theme-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.cfg-theme-btn.active {
+  border-color: var(--green);
+  background: rgba(21,199,122,.08);
+  color: var(--green);
+}
+
+.cfg-theme-btn strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.cfg-theme-btn span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ===== FINANCEIRO MOBILE ===== */
+@media (max-width: 768px) {
+  .fin-shell { padding: 10px 0 0; }
+
+  .fin-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .fin-tabs::-webkit-scrollbar { display: none; }
+
+  .fin-tab {
+    white-space: nowrap;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .fin-kpi-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .fin-kpi {
+    padding: 10px 12px;
+  }
+
+  .fin-kpi-value { font-size: 18px; }
+
+  .fin-month-filter {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+  .fin-month-filter::-webkit-scrollbar { display: none; }
+
+  .fin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .fin-table { min-width: 560px; }
+
+  .fin-charts-2 { grid-template-columns: 1fr; gap: 12px; }
+
+  .fin-modal { width: calc(100vw - 24px); max-height: 90vh; overflow-y: auto; }
+
+  .fin-chart-wrap { height: 180px; }
+}
+
+@media (max-width: 480px) {
+  .fin-kpi-grid { grid-template-columns: 1fr; }
+  .fin-kpi-value { font-size: 20px; }
+  .cal-week-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+  .cal-week-day { min-height: 120px; }
+  .cal-week-header { padding: 4px; gap: 2px; }
+  .cal-week-dayname { font-size: 9px; }
+  .cal-week-daynum { font-size: 11px; width: 20px; height: 20px; }
+  .cal-week-events { padding: 3px; }
+  .cal-week-events .cal-event { font-size: 9px; padding: 2px 4px; }
+  .contact-profile-panel { width: 100%; }
+}
+
+/* ===== CONVERSAS MOBILE ===== */
+@media (max-width: 768px) {
+  .conversation-shell {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: calc(100vh - 130px);
+  }
+
+  .conversation-list {
+    height: 200px;
+    min-height: 160px;
+    max-height: 240px;
+  }
+
+  .conversation-main {
+    min-height: 400px;
+  }
+
+  .chat-body {
+    min-height: 280px;
+  }
+
+  .contact-profile-panel {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(280px, 100vw);
+    z-index: 100;
+  }
 }
