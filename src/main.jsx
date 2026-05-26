@@ -1691,13 +1691,15 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
 function Calendario({ state }) {
   const [viewMode, setViewMode] = useState('postagem') // 'edicao' | 'capa' | 'postagem'
   const [calView, setCalView] = useState('week') // 'week' | 'month'
-  const [weekOffset, setWeekOffset] = useState(0) // semanas a partir de hoje
+  const [weekOffset, setWeekOffset] = useState(0)
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth() }
   })
   const [filterOpen, setFilterOpen] = useState(false)
   const [filters, setFilters] = useState({ member: '', client: '', format: '', status: '' })
+  const [selectedDay, setSelectedDay] = useState(null) // dateStr — painel de eventos do dia
+  const [selectedEvent, setSelectedEvent] = useState(null) // event object — modal de detalhes
 
   const { year, month } = currentMonth
   const today = new Date()
@@ -1796,6 +1798,20 @@ function Calendario({ state }) {
   const rem = (7 - (cells.length % 7)) % 7
   for (let i = 1; i <= rem; i++) cells.push({ day: i, otherMonth: true })
 
+  // Encontra o post/script original pelo evento para exibir detalhes
+  const findSource = (ev) => {
+    if (!ev) return null
+    const posts = state.posts || []
+    const scripts = state.scripts || []
+    const cronograma = state.cronograma || []
+    return posts.find(p => {
+      const d = p.date || p.cover_date || p.scheduled_date
+      return d && d.slice(0,10) === ev.date && (p.caption?.includes(ev.label.slice(0,20)) || p.client === ev.client)
+    }) || scripts.find(s => s.title === ev.label || s.client === ev.client) || cronograma.find(c => (c.title || c.format) === ev.label) || ev
+  }
+
+  const dayEventsForPanel = selectedDay ? allEvents.filter(e => e.date === selectedDay) : []
+
   return (
     <section className="cal-shell page-grid">
       {/* Controles de tipo de data */}
@@ -1813,7 +1829,7 @@ function Calendario({ state }) {
           <button className={`cal-view-btn${calView === 'week' ? ' active' : ''}`} onClick={() => setCalView('week')}>Semana</button>
           <button className={`cal-view-btn${calView === 'month' ? ' active' : ''}`} onClick={() => setCalView('month')}>Mês</button>
           <button className={`cal-view-btn${hasFilters ? ' active' : ''}`} onClick={() => setFilterOpen(true)} title="Filtros">
-            <Filter size={13} />{hasFilters ? ' Filtros ativos' : ' Filtrar'}
+            <Filter size={13} />{hasFilters ? ' Filtros' : ' Filtrar'}
           </button>
         </div>
       </div>
@@ -1827,32 +1843,24 @@ function Calendario({ state }) {
               <button className="icon-btn" onClick={() => setFilterOpen(false)}><X size={16} /></button>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
-              <label className="field">
-                <span>Membro responsável</span>
+              <label className="field"><span>Membro</span>
                 <select value={filters.member} onChange={e => setFilters(f => ({...f, member: e.target.value}))}>
-                  <option value="">Todos</option>
-                  {allMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value="">Todos</option>{allMembers.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </label>
-              <label className="field">
-                <span>Cliente</span>
+              <label className="field"><span>Cliente</span>
                 <select value={filters.client} onChange={e => setFilters(f => ({...f, client: e.target.value}))}>
-                  <option value="">Todos</option>
-                  {allClients.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="">Todos</option>{allClients.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </label>
-              <label className="field">
-                <span>Formato</span>
+              <label className="field"><span>Formato</span>
                 <select value={filters.format} onChange={e => setFilters(f => ({...f, format: e.target.value}))}>
-                  <option value="">Todos</option>
-                  {allFormats.map(f => <option key={f} value={f}>{f}</option>)}
+                  <option value="">Todos</option>{allFormats.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
               </label>
-              <label className="field">
-                <span>Status</span>
+              <label className="field"><span>Status</span>
                 <select value={filters.status} onChange={e => setFilters(f => ({...f, status: e.target.value}))}>
-                  <option value="">Todos</option>
-                  {allStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="">Todos</option>{allStatuses.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </label>
             </div>
@@ -1864,29 +1872,107 @@ function Calendario({ state }) {
         </div>
       )}
 
+      {/* Painel lateral: eventos do dia selecionado */}
+      {selectedDay && (
+        <div className="fin-modal-overlay" onClick={() => setSelectedDay(null)}>
+          <div className="cal-day-panel" onClick={e => e.stopPropagation()}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <h3 style={{margin:0,fontSize:15}}>
+                {new Date(selectedDay + 'T12:00:00').toLocaleDateString('pt-BR', {weekday:'long', day:'numeric', month:'long'})}
+              </h3>
+              <button className="icon-btn" onClick={() => setSelectedDay(null)}><X size={16} /></button>
+            </div>
+            {dayEventsForPanel.length === 0
+              ? <p style={{color:'var(--muted)', fontSize:13}}>Nenhum conteúdo neste dia.</p>
+              : dayEventsForPanel.map((ev, i) => (
+                  <button
+                    key={i}
+                    className="cal-day-event-row"
+                    onClick={() => { setSelectedEvent(ev); setSelectedDay(null) }}
+                  >
+                    <div className={`cal-dot ${ev.type}`} />
+                    <div style={{flex:1, textAlign:'left'}}>
+                      <strong style={{display:'block', fontSize:13}}>{ev.label}</strong>
+                      <span style={{fontSize:11, color:'var(--muted)'}}>{ev.sub} {ev.status ? `· ${ev.status}` : ''}</span>
+                    </div>
+                    <ChevronRight size={14} style={{color:'var(--muted)', flexShrink:0}} />
+                  </button>
+                ))
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Modal de detalhes do post/evento */}
+      {selectedEvent && (
+        <div className="fin-modal-overlay" onClick={() => setSelectedEvent(null)}>
+          <div className="fin-modal" onClick={e => e.stopPropagation()} style={{maxWidth:480}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+              <h3 style={{margin:0,fontSize:16}}>{selectedEvent.label}</h3>
+              <button className="icon-btn" onClick={() => setSelectedEvent(null)}><X size={16} /></button>
+            </div>
+            {(() => {
+              const src = findSource(selectedEvent)
+              const rows = [
+                ['Data', selectedEvent.date ? new Date(selectedEvent.date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'],
+                ['Cliente', src?.client || selectedEvent.client || '—'],
+                ['Status', src?.status || selectedEvent.status || '—'],
+                ['Formato / Rede', src?.network || src?.format || selectedEvent.format || '—'],
+                ['Responsável', src?.owner || src?.editor || selectedEvent.member || selectedEvent.sub || '—'],
+              ]
+              return (
+                <>
+                  <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
+                    {rows.map(([label, value]) => value && value !== '—' ? (
+                      <div key={label} className="profile-info-row" style={{padding:'6px 0'}}>
+                        <span>{label}</span><strong style={{textAlign:'right'}}>{value}</strong>
+                      </div>
+                    ) : null)}
+                  </div>
+                  {(src?.caption || src?.hook || src?.body) && (
+                    <div style={{background:'var(--surface-2)', borderRadius:8, padding:'12px 14px', marginBottom:12}}>
+                      {src.hook && <p style={{margin:'0 0 8px', fontSize:13, fontStyle:'italic', color:'var(--blue)'}}>"{src.hook}"</p>}
+                      {src.caption && <p style={{margin:'0 0 8px', fontSize:13, whiteSpace:'pre-wrap'}}>{src.caption}</p>}
+                      {src.body && <p style={{margin:0, fontSize:12, color:'var(--muted)', whiteSpace:'pre-wrap'}}>{src.body}</p>}
+                    </div>
+                  )}
+                  {src?.cta && <p style={{fontSize:12, color:'var(--green)', margin:0}}><strong>CTA:</strong> {src.cta}</p>}
+                </>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
       {calView === 'week' ? (
         <>
-          {/* Navegação semanal */}
-          <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
             <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={() => setWeekOffset(w => w - 1)}><ChevronLeft size={16} /></button>
-            <strong style={{fontSize:15, minWidth:200, textAlign:'center'}}>{weekLabel}</strong>
+            <strong style={{fontSize:15, minWidth:180, textAlign:'center'}}>{weekLabel}</strong>
             <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={() => setWeekOffset(w => w + 1)}><ChevronRight size={16} /></button>
             {weekOffset !== 0 && <button className="ghost" style={{fontSize:12}} onClick={() => setWeekOffset(0)}>Hoje</button>}
-            <span style={{color:'var(--muted)', fontSize:12, marginLeft:4}}>
+            <span style={{color:'var(--muted)', fontSize:12}}>
               {weekDays.reduce((s, d) => s + d.evs.length, 0)} evento(s)
             </span>
           </div>
           <div className="cal-week-grid">
             {weekDays.map(({ d, ds, evs, isToday }) => (
-              <div key={ds} className={`cal-week-day${isToday ? ' today' : ''}`}>
-                <div className="cal-week-header">
+              <div key={ds} className={`cal-week-day${isToday ? ' today' : ''}${evs.length > 0 ? ' has-events' : ''}`}>
+                <div className="cal-week-header" onClick={() => evs.length > 0 && setSelectedDay(ds)} style={{cursor: evs.length > 0 ? 'pointer' : 'default'}}>
                   <span className="cal-week-dayname">{dayNames[d.getDay()]}</span>
                   <span className={`cal-week-daynum${isToday ? ' today' : ''}`}>{d.getDate()}</span>
+                  {evs.length > 0 && <span className="cal-week-count">{evs.length}</span>}
                 </div>
                 <div className="cal-week-events">
                   {evs.length === 0 && <div style={{height:8}} />}
                   {evs.map((ev, i) => (
-                    <div key={i} className={`cal-event ${ev.type}${ev.status?.toLowerCase().includes('aprovado') || ev.status?.toLowerCase().includes('postado') ? '' : ' pendente'}`} title={`${ev.label} — ${ev.sub}`}>
+                    <div
+                      key={i}
+                      className={`cal-event ${ev.type}${ev.status?.toLowerCase().includes('aprovado') || ev.status?.toLowerCase().includes('postado') ? '' : ' pendente'}`}
+                      title={`${ev.label} — ${ev.sub}`}
+                      onClick={() => setSelectedEvent(ev)}
+                      style={{cursor:'pointer'}}
+                    >
                       <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>{ev.label}</span>
                       {ev.sub && <span style={{opacity:.7,fontSize:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>{ev.sub}</span>}
                     </div>
@@ -1898,7 +1984,6 @@ function Calendario({ state }) {
         </>
       ) : (
         <>
-          {/* Navegação mensal */}
           <div style={{display:'flex', alignItems:'center', gap:12}}>
             <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={prevMonth}><ChevronLeft size={16} /></button>
             <strong style={{fontSize:16, minWidth:160, textAlign:'center'}}>{monthNames[month]} {year}</strong>
@@ -1908,14 +1993,21 @@ function Calendario({ state }) {
           <div className="cal-grid">
             {dayNames.map((d) => <div key={d} className="cal-day-header">{d}</div>)}
             {cells.map((cell, i) => (
-              <div key={i} className={`cal-day${cell.otherMonth ? ' other-month' : ''}${cell.isToday ? ' today' : ''}`}>
+              <div
+                key={i}
+                className={`cal-day${cell.otherMonth ? ' other-month' : ''}${cell.isToday ? ' today' : ''}${(cell.events || []).length > 0 ? ' has-events' : ''}`}
+                onClick={() => !cell.otherMonth && cell.ds && setSelectedDay(cell.ds)}
+                style={{cursor: (!cell.otherMonth && (cell.events || []).length > 0) ? 'pointer' : 'default'}}
+              >
                 <div className="cal-day-num">{cell.day}</div>
-                {(cell.events || []).slice(0, 3).map((ev, ei) => (
-                  <div key={ei} className={`cal-event ${ev.type}${ev.status?.toLowerCase().includes('aprovado') || ev.status?.toLowerCase().includes('postado') ? '' : ' pendente'}`} title={`${ev.label} — ${ev.sub}`}>
-                    {ev.label}
+                {(cell.events || []).length > 0 && (
+                  <div className="cal-day-dots">
+                    {(cell.events || []).slice(0, 4).map((ev, ei) => (
+                      <span key={ei} className={`cal-dot ${ev.type}`} title={ev.label} />
+                    ))}
+                    {(cell.events || []).length > 4 && <span style={{fontSize:9, color:'var(--muted)'}}>+{cell.events.length - 4}</span>}
                   </div>
-                ))}
-                {(cell.events || []).length > 3 && <div style={{fontSize:10, color:'var(--muted)'}}>+{cell.events.length - 3}</div>}
+                )}
               </div>
             ))}
           </div>
@@ -2170,6 +2262,7 @@ function Conversas({ state, addItem }) {
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [activeTemplate, setActiveTemplate] = useState('')
+  const [mobileConvView, setMobileConvView] = useState('list') // 'list' | 'chat'
   const [profileOpen, setProfileOpen] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
@@ -2386,7 +2479,7 @@ function Conversas({ state, addItem }) {
   return (
     <section className="conversation-shell">
       {/* Lista de contatos */}
-      <aside className="conversation-list">
+      <aside className={`conversation-list${mobileConvView === 'chat' ? ' mobile-hidden' : ''}`}>
         <div className="conversation-sidebar-head">
           <div>
             <p className="eyebrow" style={{margin:0, fontSize:11}}>Conversas</p>
@@ -2406,7 +2499,7 @@ function Conversas({ state, addItem }) {
             <button
               key={contact.id}
               className={selected?.id === contact.id ? 'active' : ''}
-              onClick={() => { setContactId(contact.id); setDraft(''); setActiveTemplate('') }}
+              onClick={() => { setContactId(contact.id); setDraft(''); setActiveTemplate(''); setMobileConvView('chat') }}
             >
               <ContactAvatar contact={contact} />
               <div className="chat-list-info">
@@ -2423,9 +2516,19 @@ function Conversas({ state, addItem }) {
       </aside>
 
       {/* Área principal do chat */}
-      <div className="conversation-main">
+      <div className={`conversation-main${mobileConvView === 'list' ? ' mobile-hidden' : ''}`}>
         {/* Header do chat */}
         <header className="chat-head">
+          {/* Botão voltar (só mobile) */}
+          <button
+            className="chat-back-btn"
+            onClick={() => setMobileConvView('list')}
+            title="Voltar para conversas"
+            style={{background:'transparent',border:0,padding:'0 4px 0 0',cursor:'pointer',flexShrink:0,display:'none'}}
+            aria-label="Voltar"
+          >
+            <ChevronLeft size={22} />
+          </button>
           <button
             className="chat-avatar-btn"
             onClick={() => setProfileOpen(true)}

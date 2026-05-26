@@ -2252,24 +2252,24 @@ td small {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 16px;
+    padding: 6px 12px;
     border-bottom: 1px solid var(--border);
     background: rgba(9,14,24,.95);
     position: sticky;
     top: 0;
     z-index: 60;
-    gap: 12px;
+    gap: 8px;
   }
 
   .mobile-top-bar img {
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     object-fit: contain;
   }
 
   .mobile-top-title {
     flex: 1;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
   }
 
@@ -2737,6 +2737,67 @@ td small {
   line-height: 1.3;
 }
 
+/* ===== CALENDÁRIO — DOTS E PAINÉIS ===== */
+.cal-day.has-events { cursor: pointer; }
+.cal-day.has-events:hover { border-color: var(--border-strong); background: rgba(21,199,122,.04); }
+
+.cal-day-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.cal-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.cal-dot.postagem { background: var(--green); }
+.cal-dot.edicao   { background: var(--gold); }
+.cal-dot.capa     { background: var(--blue); }
+
+.cal-day-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 16px;
+  width: min(360px, 96vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(0,0,0,.55);
+}
+
+.cal-day-event-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: background 0.12s;
+  text-align: left;
+}
+.cal-day-event-row:hover { background: var(--surface-3); border-color: var(--border-strong); }
+
+.cal-week-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--green);
+  color: #fff;
+  border-radius: 9999px;
+  padding: 1px 5px;
+  line-height: 1.4;
+  margin-left: auto;
+}
+
 /* ===== CONFIGURAÇÕES — SELETOR DE TEMA ===== */
 .cfg-theme-btn {
   display: flex;
@@ -2776,7 +2837,15 @@ td small {
 
 /* ===== FINANCEIRO MOBILE ===== */
 @media (max-width: 768px) {
-  .fin-shell { padding: 10px 0 0; }
+  .fin-shell { padding: 6px 0 0; }
+
+  .cal-view-bar {
+    gap: 5px;
+  }
+  .cal-view-btn {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
 
   .fin-tabs {
     overflow-x: auto;
@@ -2840,18 +2909,28 @@ td small {
 @media (max-width: 768px) {
   .conversation-shell {
     grid-template-columns: 1fr;
-    height: calc(100vh - 130px);
-    min-height: 500px;
+    height: calc(100vh - 58px); /* abaixo da mobile-top-bar compacta */
+    min-height: 0;
+    overflow: hidden;
   }
 
+  /* Navegação de dois painéis: lista ↔ chat */
   .conversation-list {
-    max-height: 220px;
+    max-height: 100%;
+    overflow-y: auto;
   }
+  .conversation-list.mobile-hidden { display: none; }
 
   .conversation-main {
     min-height: 0;
     height: 100%;
+    display: flex;
+    flex-direction: column;
   }
+  .conversation-main.mobile-hidden { display: none; }
+
+  /* Botão voltar fica visível só no mobile */
+  .chat-back-btn { display: flex !important; align-items: center; color: var(--blue); }
 
   .contact-profile-panel {
     position: fixed;
