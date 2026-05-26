@@ -29,6 +29,7 @@ import {
   Megaphone,
   Menu,
   MessageCircle,
+  Minus,
   Mic,
   MicOff,
   MonitorPlay,
@@ -793,7 +794,9 @@ function Clientes({ state, addItem, updateItem, query }) {
           <div className="stack-list">
             {clients.map((client) => (
               <button key={client.id} className={`client-row ${selected?.id === client.id ? 'active' : ''}`} onClick={() => setSelectedId(client.id)}>
-                <span>{initials(client.name)}</span>
+                {client.photo
+                  ? <img src={client.photo} alt={client.name} className="client-avatar-img" />
+                  : <span>{initials(client.name)}</span>}
                 <div>
                   <strong>{client.name}</strong>
                   <small>{client.segment} · {client.instagram || 'sem Instagram'}</small>
@@ -808,7 +811,9 @@ function Clientes({ state, addItem, updateItem, query }) {
           {selected ? (
             <div className="client-dossier">
               <div className="dossier-head">
-                <div className="avatar-lg">{initials(selected.name)}</div>
+                {selected.photo
+                  ? <img src={selected.photo} alt={selected.name} className="avatar-lg avatar-img" />
+                  : <div className="avatar-lg">{initials(selected.name)}</div>}
                 <div>
                   <h2>{selected.name}</h2>
                   <p>{selected.segment} · {selected.plan}</p>
@@ -857,6 +862,24 @@ function Clientes({ state, addItem, updateItem, query }) {
                     <Select label="Contrato" value={clientDraft.contract_status || 'Pendente'} onChange={(contract_status) => setClientDraft({ ...clientDraft, contract_status })} options={['Pendente', 'Contrato preenchido', 'Sem contrato - confiança', 'Importado/legado']} />
                     <Select label="Origem do cliente" value={clientDraft.client_origin || 'Manual'} onChange={(client_origin) => setClientDraft({ ...clientDraft, client_origin })} options={['Manual', 'Contrato', 'Importado/legado', 'Diagnóstico']} />
                     <Input label="Logo (URL)" value={clientDraft.logo_url || ''} onChange={(logo_url) => setClientDraft({ ...clientDraft, logo_url })} />
+                    <label className="field span client-photo-upload">
+                      <span>Foto do cliente</span>
+                      <div className="photo-upload-row">
+                        {clientDraft.photo
+                          ? <img src={clientDraft.photo} alt="foto" className="photo-preview" />
+                          : <div className="photo-placeholder">{initials(clientDraft.name || '')}</div>}
+                        <input type="file" accept="image/*" style={{ display: 'none' }} id="edit-client-photo"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            const reader = new FileReader()
+                            reader.onload = (ev) => setClientDraft({ ...clientDraft, photo: ev.target.result })
+                            reader.readAsDataURL(file)
+                          }} />
+                        <label htmlFor="edit-client-photo" className="secondary btn-sm">Escolher foto</label>
+                        {clientDraft.photo && <button className="ghost btn-sm" onClick={() => setClientDraft({ ...clientDraft, photo: '' })}>Remover</button>}
+                      </div>
+                    </label>
                     <Input label="Preferência de gravação" value={clientDraft.recording_preferences || ''} onChange={(recording_preferences) => setClientDraft({ ...clientDraft, recording_preferences })} />
                     <label className="field span">
                       <span>Preferências de conteúdo</span>
@@ -888,6 +911,24 @@ function Clientes({ state, addItem, updateItem, query }) {
 
       <Modal title="Novo cliente" open={modalOpen} onClose={() => setModalOpen(false)}>
         <div className="form-grid">
+          <label className="field span client-photo-upload">
+            <span>Foto do cliente</span>
+            <div className="photo-upload-row">
+              {form.photo
+                ? <img src={form.photo} alt="foto" className="photo-preview" />
+                : <div className="photo-placeholder">{form.name ? initials(form.name) : '?'}</div>}
+              <input type="file" accept="image/*" style={{ display: 'none' }} id="new-client-photo"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = (ev) => setForm({ ...form, photo: ev.target.result })
+                  reader.readAsDataURL(file)
+                }} />
+              <label htmlFor="new-client-photo" className="secondary btn-sm">Escolher foto</label>
+              {form.photo && <button className="ghost btn-sm" onClick={() => setForm({ ...form, photo: '' })}>Remover</button>}
+            </div>
+          </label>
           <Input label="Nome" value={form.name} onChange={(name) => setForm({ ...form, name })} />
           <Input label="WhatsApp" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
           <Input label="Instagram" value={form.instagram} onChange={(instagram) => setForm({ ...form, instagram })} />
@@ -1473,15 +1514,32 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
   const [reviewFeedback, setReviewFeedback] = useState('')
   const [reviewLoading, setReviewLoading] = useState(false)
   const contentFileInputRef = useRef(null)
+  const [sideItem, setSideItem] = useState(null)
+  const [sideMinimized, setSideMinimized] = useState(false)
 
-  const visibleClients = state.clients.filter((client) => filters.archived || !isArchivedClient(client))
+  // Ordena criativos: data de postagem → data de edição → alfabético
+  const sortContentItems = (items) => [...items].sort((a, b) => {
+    if (a.post_date && b.post_date) return a.post_date.localeCompare(b.post_date)
+    if (a.post_date) return -1
+    if (b.post_date) return 1
+    const aUpd = a.updatedAt || a.createdAt || ''
+    const bUpd = b.updatedAt || b.createdAt || ''
+    if (aUpd && bUpd) return bUpd.localeCompare(aUpd)
+    if (aUpd) return -1
+    if (bUpd) return 1
+    return (a.title || '').localeCompare(b.title || '', 'pt-BR')
+  })
+
+  const visibleClients = state.clients
+    .filter((client) => filters.archived || !isArchivedClient(client))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'))
   const allContent = state.scripts.map((item) => normalizeContentItem(item, state.clients))
   const responsibleOptions = unique(['Todos', 'DBE', ...allContent.map((item) => item.responsible).filter(Boolean), ...state.clients.map((client) => client.owner).filter(Boolean)])
   const monthOptions = unique(['Todos', ...allContent.flatMap((item) => [item.delivery_date, item.post_date, item.cover_date]).filter(Boolean).map((value) => value.slice(0, 7))])
   const filteredContent = allContent.filter((item) => contentMatchesFilters(item, filters, state.clients))
   const groups = visibleClients.map((client) => ({
     client,
-    items: filteredContent.filter((item) => contentBelongsToClient(item, client)),
+    items: sortContentItems(filteredContent.filter((item) => contentBelongsToClient(item, client))),
   }))
 
   const openNew = (client) => {
@@ -1712,51 +1770,108 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
         </div>
       </Panel>
 
-      <div className="schedule-list">
-        {groups.map(({ client, items }) => {
-          const isOpen = expanded[client.id] ?? true
-          return (
-            <section className="schedule-group" key={client.id}>
-              <div className="group-head">
-                <button className="group-toggle" onClick={() => setExpanded({ ...expanded, [client.id]: !isOpen })}>
-                  {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                  <div>
-                    <strong>{client.name}</strong>
-                    <span>{client.segment || client.plan || 'Projeto DBE'}</span>
-                  </div>
-                </button>
-                <Badge text={`${items.length} conteúdo(s)`} tone={items.length ? 'blue' : 'default'} />
-                <button className="ghost" onClick={() => openNew(client)}><Plus size={14} /> Adicionar</button>
-              </div>
-              {isOpen && (
-                <div className="group-body">
-                  {items.length ? (
-                    items.map((item) => (
-                      <button className="schedule-row" key={item.id} onClick={() => openEdit(item)}>
-                        <div className="content-title-cell">
-                          <strong>{item.title}</strong>
-                          <span>{item.reference_url || item.caption || item.notes || 'Sem detalhes adicionais'}</span>
-                        </div>
-                        <Badge text={item.format} tone={formatTone(item.format)} />
-                        <Badge text={item.status} tone={statusTone(item.status)} />
-                        <span>{item.responsible || '-'}</span>
-                        <span>{date(item.delivery_date)}</span>
-                        <span>{date(item.post_date)}</span>
-                        <Badge text={item.priority} tone={priorityTone(item.priority)} />
-                        <span className="attachment-cell">{item.media_files ? <Paperclip size={15} /> : null}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="empty-box schedule-empty">
-                      <span>Esse cliente ainda não tem conteúdos cadastrados.</span>
-                      <button className="secondary" onClick={() => openNew(client)}><Plus size={14} /> Adicionar primeiro conteúdo</button>
+      <div className={sideItem ? 'schedule-with-panel' : 'schedule-list'}>
+        <div className="schedule-list">
+          {groups.map(({ client, items }) => {
+            const isOpen = expanded[client.id] ?? true
+            return (
+              <section className="schedule-group" key={client.id}>
+                <div className="group-head">
+                  <button className="group-toggle" onClick={() => setExpanded({ ...expanded, [client.id]: !isOpen })}>
+                    {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    {client.photo
+                      ? <img src={client.photo} alt={client.name} className="group-avatar-img" />
+                      : <div className="group-avatar">{initials(client.name)}</div>}
+                    <div>
+                      <strong>{client.name}</strong>
+                      <span>{client.segment || client.plan || 'Projeto DBE'}</span>
                     </div>
-                  )}
+                  </button>
+                  <Badge text={`${items.length}`} tone={items.length ? 'blue' : 'default'} />
+                  <button className="ghost" onClick={() => openNew(client)}><Plus size={14} /></button>
                 </div>
-              )}
-            </section>
-          )
-        })}
+                {isOpen && (
+                  <div className="group-body">
+                    {items.length ? (
+                      items.map((item) => (
+                        <button
+                          className={`schedule-row${sideItem?.id === item.id ? ' active' : ''}`}
+                          key={item.id}
+                          onClick={() => { setSideItem(item); setSideMinimized(false) }}
+                        >
+                          <div className="content-title-cell">
+                            <strong>{item.title}</strong>
+                            <span>{item.reference_url || item.caption || item.notes || 'Sem detalhes adicionais'}</span>
+                          </div>
+                          <Badge text={item.format} tone={formatTone(item.format)} />
+                          <Badge text={item.status} tone={statusTone(item.status)} />
+                          <span>{item.responsible || '-'}</span>
+                          <span>{date(item.post_date) || date(item.delivery_date) || '-'}</span>
+                          <span className="attachment-cell">{item.media_files ? <Paperclip size={15} /> : null}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="empty-box schedule-empty">
+                        <span>Esse cliente ainda não tem conteúdos cadastrados.</span>
+                        <button className="secondary" onClick={() => openNew(client)}><Plus size={14} /> Adicionar primeiro conteúdo</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )
+          })}
+        </div>
+
+        {sideItem && (
+          <div className={`script-side-panel${sideMinimized ? ' minimized' : ''}`}>
+            <div className="side-panel-header">
+              <span className={`badge ${statusTone(sideItem.status)}`}>{sideItem.status}</span>
+              <h4 className="side-panel-title">{sideItem.title}</h4>
+              <button className="icon-btn" title="Minimizar" onClick={() => setSideMinimized(!sideMinimized)}>
+                {sideMinimized ? <ChevronDown size={16} /> : <Minus size={16} />}
+              </button>
+              <button className="icon-btn" title="Editar" onClick={() => openEdit(sideItem)}><Pencil size={15} /></button>
+              <button className="icon-btn" title="Fechar" onClick={() => setSideItem(null)}><X size={16} /></button>
+            </div>
+            {!sideMinimized && (
+              <div className="side-panel-body">
+                {[
+                  ['Cliente', sideItem.client],
+                  ['Formato', sideItem.format],
+                  ['Responsável', sideItem.responsible],
+                  ['Prioridade', sideItem.priority],
+                  ['Entrega', date(sideItem.delivery_date)],
+                  ['Postagem', date(sideItem.post_date)],
+                  ['Data da capa', date(sideItem.cover_date)],
+                ].map(([label, value]) => value ? (
+                  <div className="prop-row" key={label}>
+                    <span className="prop-label">{label}</span>
+                    <span className="prop-value">{value}</span>
+                  </div>
+                ) : null)}
+                {sideItem.caption && (
+                  <div className="prop-row prop-row--block">
+                    <span className="prop-label">Legenda</span>
+                    <p className="prop-value prop-text">{sideItem.caption}</p>
+                  </div>
+                )}
+                {sideItem.reference_url && (
+                  <div className="prop-row">
+                    <span className="prop-label">Referência</span>
+                    <a className="prop-value link" href={sideItem.reference_url} target="_blank" rel="noreferrer">Ver link</a>
+                  </div>
+                )}
+                {sideItem.notes && (
+                  <div className="prop-row prop-row--block">
+                    <span className="prop-label">Notas</span>
+                    <p className="prop-value prop-text">{sideItem.notes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Modal title={editing ? 'Editar conteúdo' : 'Novo conteúdo'} open={modalOpen} onClose={() => setModalOpen(false)} wide={form.format === 'Roteiro de Reels'}>

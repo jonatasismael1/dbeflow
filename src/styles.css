@@ -3490,3 +3490,195 @@ td small {
     z-index: 100;
   }
 }
+
+/* ── Cronograma com painel lateral ─────────────────────────── */
+.schedule-with-panel {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.schedule-with-panel .schedule-list {
+  min-width: 0;
+}
+
+.script-side-panel {
+  position: sticky;
+  top: 80px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  animation: slideInRight .18s ease;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.script-side-panel.minimized .side-panel-body { display: none; }
+
+.side-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.side-panel-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .14s ease, color .14s ease;
+}
+.icon-btn:hover { background: var(--surface-3); color: var(--text); }
+
+.side-panel-body {
+  padding: 12px 14px;
+  display: grid;
+  gap: 2px;
+}
+
+.prop-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.prop-row:last-child { border-bottom: 0; }
+.prop-row--block { align-items: flex-start; }
+
+.prop-label {
+  width: 110px;
+  color: var(--muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.prop-value { flex: 1; color: var(--text); }
+.prop-value.link { color: var(--blue); text-decoration: none; }
+.prop-value.link:hover { text-decoration: underline; }
+.prop-text { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* Linha ativa no cronograma quando o painel está aberto */
+.schedule-row.active {
+  background: rgba(59,143,232,.12);
+  border-left: 2px solid var(--blue);
+}
+
+/* ── Avatar do cliente no cabeçalho do grupo ───────────────── */
+.group-toggle {
+  grid-template-columns: 18px 32px minmax(0, 1fr);
+}
+
+.group-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.group-avatar-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* ── Avatar na lista de clientes ───────────────────────────── */
+.client-avatar-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatar-img {
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* ── Upload de foto do cliente ─────────────────────────────── */
+.photo-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.photo-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border-strong);
+}
+
+.photo-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--border-strong);
+}
+
+.btn-sm { padding: 6px 12px; font-size: 12px; cursor: pointer; }
+
+/* Coluna reduzida no cronograma quando painel está aberto */
+.schedule-with-panel .schedule-row {
+  grid-template-columns: minmax(140px, 1fr) 100px 100px auto auto;
+}
+
+@media (max-width: 900px) {
+  .schedule-with-panel {
+    grid-template-columns: 1fr;
+  }
+  .script-side-panel {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    top: auto;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    z-index: 200;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+}
