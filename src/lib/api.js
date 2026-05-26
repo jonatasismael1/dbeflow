@@ -39,6 +39,11 @@ export const contract = {
 export const meta = {
   insights: (igUserId) => call('meta-insights', { igUserId }),
   publish: (igUserId, imageUrl, caption) => call('meta-publish', { igUserId, imageUrl, caption }),
+  instagramAuthUrl: (clientId, user) => call('meta-instagram-auth-url', { clientId, user }),
+  instagramStatus: (clientId, user) => call('sync-instagram-account', { clientId, user, action: 'status' }),
+  syncInstagramAccount: (clientId, user) => call('sync-instagram-account', { clientId, user, action: 'sync' }),
+  syncInstagramMedia: (clientId, user) => call('sync-instagram-media', { clientId, user }),
+  disconnectInstagram: (clientId, user) => call('disconnect-instagram', { clientId, user }),
 }
 
 // --- IA Deby (OpenRouter) ---

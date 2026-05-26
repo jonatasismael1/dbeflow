@@ -7,13 +7,23 @@
 // ===========================================================================
 import { supabase, isSupabaseConfigured } from './supabase'
 
-const LOCAL_KEY = 'dbe-flow-state-v1'
+const LOCAL_KEY = 'dbe-flow-state-v2'
 
-// Tabelas "de módulo" (JSONB). A ordem não importa.
-export const TABLES = [
-  'clients', 'leads', 'scripts', 'posts', 'invoices',
-  'automations', 'contracts', 'diagnostics', 'briefings',
-]
+// Mapa: chave do estado no app → nome da tabela no Supabase
+// Prefixo dbe_ para não conflitar com as tabelas do sistema de clínicas
+const TABLE_MAP = {
+  clients:     'dbe_clients',
+  leads:       'dbe_leads',
+  scripts:     'dbe_scripts',
+  posts:       'dbe_posts',
+  invoices:    'dbe_invoices',
+  automations: 'dbe_automations',
+  contracts:   'dbe_contracts',
+  diagnostics: 'dbe_diagnostics',
+  briefings:   'dbe_briefings',
+}
+
+export const TABLES = Object.keys(TABLE_MAP)
 
 // Converte linha do banco -> objeto plano usado no app
 const fromRow = (row) => ({ id: row.id, ...(row.data || {}) })
@@ -24,55 +34,54 @@ const toData = (item) => { const { id, ...rest } = item; return rest }
 function readLocal() {
   try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null') } catch { return null }
 }
-function writeLocal(state) {
-  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state)) } catch { /* ignora */ }
-}
 
 // ===========================================================================
 // loadAll(seed): devolve o estado completo do app
 // ===========================================================================
 export async function loadAll(seed) {
   if (!isSupabaseConfigured) {
-    // Modo local: usa o que estiver salvo, com o seed como base
     const parsed = readLocal()
     return parsed ? { ...seed, ...parsed } : seed
   }
 
-  // Modo nuvem: carrega cada tabela do Supabase (arrays vazios se ainda não há dados)
+  // Modo nuvem: carrega cada tabela do Supabase
   const state = { ...seed }
-  for (const table of TABLES) state[table] = []
-  await Promise.all(TABLES.map(async (table) => {
+  for (const key of TABLES) state[key] = []
+  await Promise.all(TABLES.map(async (key) => {
+    const table = TABLE_MAP[key]
     const { data, error } = await supabase
       .from(table)
       .select('id, data, created_at')
       .order('created_at', { ascending: false })
     if (error) { console.warn('[db] erro ao carregar', table, error.message); return }
-    state[table] = (data || []).map(fromRow)
+    state[key] = (data || []).map(fromRow)
   }))
   return state
 }
 
 // ===========================================================================
-// Mutações. No modo LOCAL elas não escrevem nada aqui — o app espelha o estado
-// inteiro no localStorage automaticamente (ver useEffect no main.jsx). No modo
-// NUVEM, cada mudança vai para o Supabase.
+// Mutações
 // ===========================================================================
-export async function insertItem(table, item) {
-  if (!isSupabaseConfigured) return { ...item, id: crypto.randomUUID() }
+export async function insertItem(key, item) {
+  if (!isSupabaseConfigured) return { ...item, id: item.id || crypto.randomUUID() }
+  const table = TABLE_MAP[key] || key
+  const id = item.id || crypto.randomUUID()
   const { data, error } = await supabase
-    .from(table).insert({ data: toData(item) }).select('id, data').single()
-  if (error) { console.warn('[db] insert', table, error.message); return { ...item, id: crypto.randomUUID() } }
+    .from(table).insert({ id, data: toData(item) }).select('id, data').single()
+  if (error) { console.warn('[db] insert', table, error.message); return { ...item, id } }
   return fromRow(data)
 }
 
-export async function saveItem(table, id, fullRecord) {
+export async function saveItem(key, id, fullRecord) {
   if (!isSupabaseConfigured) return
+  const table = TABLE_MAP[key] || key
   const { error } = await supabase.from(table).update({ data: toData(fullRecord) }).eq('id', id)
   if (error) console.warn('[db] update', table, error.message)
 }
 
-export async function deleteItem(table, id) {
+export async function deleteItem(key, id) {
   if (!isSupabaseConfigured) return
+  const table = TABLE_MAP[key] || key
   const { error } = await supabase.from(table).delete().eq('id', id)
   if (error) console.warn('[db] delete', table, error.message)
 }

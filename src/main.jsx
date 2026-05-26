@@ -66,7 +66,11 @@ import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v2' // v2 = dados reais importados do Notion
 const AUTH_KEY = 'dbe-auth-v1'
+const MEMBERS_KEY = 'dbe-members'
 const THEME_KEY = 'dbe-theme-v1'
+const TOAST_EVENT = 'dbe-flow-toast'
+const AVATAR_MAX_FILE_SIZE = 8 * 1024 * 1024
+const AVATAR_OUTPUT_SIZE = 320
 
 const USERS = [
   { email: 'assessoriadbe@gmail.com', name: 'DBE Digital', role: 'admin', avatar: null },
@@ -74,6 +78,87 @@ const USERS = [
   { email: 'jonatas.ismael25@gmail.com', name: 'Jonatas', role: 'admin', avatar: null },
 ]
 const AUTH_PASS = 'Db3digit@l'
+
+const ENTITY_LABELS = {
+  clients: 'Cliente',
+  leads: 'Lead',
+  scripts: 'Conteudo',
+  posts: 'Post',
+  invoices: 'Cobranca',
+  automations: 'Automacao',
+  contracts: 'Contrato',
+  diagnostics: 'Diagnostico',
+  briefings: 'Jornada',
+}
+
+function notify(message, tone = 'success') {
+  window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: { message, tone } }))
+}
+
+function mutationNotice(action, key, patch = {}) {
+  const label = ENTITY_LABELS[key] || 'Registro'
+  if (action === 'create') return `${label} criado com sucesso.`
+  if (action === 'delete') return `${label} excluido com sucesso.`
+  if (patch.status) {
+    const normalized = String(patch.status).toLowerCase()
+    if (normalized.includes('aprov')) return `${label} aprovado com sucesso.`
+    if (normalized.includes('pago')) return `${label} marcado como pago.`
+    if (normalized.includes('postado') || normalized.includes('publicado')) return `${label} publicado com sucesso.`
+    return `${label} atualizado para ${patch.status}.`
+  }
+  return `${label} salvo com sucesso.`
+}
+
+function readStoredMembers() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MEMBERS_KEY) || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function getTeamMembers() {
+  const byEmail = new Map(USERS.map((user) => [user.email.toLowerCase(), { ...user }]))
+  readStoredMembers().forEach((member) => {
+    if (!member?.email) return
+    const key = member.email.toLowerCase()
+    byEmail.set(key, { ...(byEmail.get(key) || {}), ...member })
+  })
+  return Array.from(byEmail.values())
+}
+
+function persistTeamMembers(members) {
+  localStorage.setItem(MEMBERS_KEY, JSON.stringify(members))
+}
+
+function resizeAvatarFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem.'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Arquivo de imagem invalido.'))
+      img.onload = () => {
+        const sourceSize = Math.min(img.width, img.height)
+        const sourceX = Math.max(0, (img.width - sourceSize) / 2)
+        const sourceY = Math.max(0, (img.height - sourceSize) / 2)
+        const canvas = document.createElement('canvas')
+        canvas.width = AVATAR_OUTPUT_SIZE
+        canvas.height = AVATAR_OUTPUT_SIZE
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('Nao foi possivel preparar a imagem.'))
+          return
+        }
+        ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE)
+        resolve(canvas.toDataURL('image/jpeg', 0.86))
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
 // Abas visíveis para editores
 const EDITOR_TABS = new Set(['cronograma', 'calendario', 'teleprompter', 'producao', 'ai', 'configuracoes'])
 const CONTENT_FORMATS = ['Reels', 'Roteiro de Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda', 'Ideia solta', 'Campanha', 'Outro']
@@ -99,6 +184,24 @@ const nav = [
 ]
 
 const MOBILE_NAV = ['cronograma', 'calendario', 'financeiro', 'conversas']
+
+const pageDescriptions = {
+  dashboard: 'Visao executiva da operacao, receita e proximas prioridades.',
+  cronograma: 'Planejamento de conteudo por cliente, formato e status.',
+  calendario: 'Agenda editorial para edicao, capa e postagem.',
+  teleprompter: 'Leitura guiada para gravacoes e roteiros aprovados.',
+  producao: 'Pastas, projetos e revisoes de video no Google Drive.',
+  clientes: 'Carteira ativa, dados operacionais e historico de cada cliente.',
+  conversas: 'Central de relacionamento e respostas pelo WhatsApp.',
+  instagram: 'Indicadores de performance e leitura de conteudos publicados.',
+  financeiro: 'Receitas, despesas, contas e resultado mensal.',
+  crm: 'Pipeline comercial e leads em acompanhamento.',
+  onboarding: 'Jornadas, pendencias e progresso de novos clientes.',
+  diagnostico: 'Raio-X de posicionamento e oportunidades comerciais.',
+  ai: 'Assistente para ideias, respostas e apoio operacional.',
+  contratos: 'Geracao e envio de contratos oficiais DBE.',
+  configuracoes: 'Preferencias, equipe, integracoes e tema visual.',
+}
 
 const seed = {
   clients: importedClients,
@@ -166,6 +269,10 @@ function App() {
     // Editores só têm acesso às abas restritas
     if (user.role !== 'admin') setActive('cronograma')
   }
+  const updateCurrentUser = (user) => {
+    setCurrentUser(user)
+    localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+  }
   const logout = () => {
     setCurrentUser(null)
     localStorage.removeItem(AUTH_KEY)
@@ -174,8 +281,9 @@ function App() {
   // Lida com redirect do callback OAuth do Google Drive
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('tab') === 'configuracoes') {
-      setActive('configuracoes')
+    const tab = params.get('tab')
+    if (tab && nav.some((item) => item.id === tab)) {
+      setActive(tab)
     }
   }, [])
 
@@ -206,6 +314,7 @@ function App() {
   const addItem = async (key, item) => {
     const record = await insertItem(key, item)
     setState((current) => ({ ...current, [key]: [record, ...(current[key] || [])] }))
+    notify(mutationNotice('create', key), 'success')
     return record
   }
   // Atualiza: aplica patch local + salva o registro completo no banco
@@ -214,11 +323,13 @@ function App() {
     const merged = { ...current, ...patch }
     setState((cur) => ({ ...cur, [key]: cur[key].map((item) => item.id === id ? merged : item) }))
     saveItem(key, id, merged)
+    notify(mutationNotice('update', key, patch), patch.status?.toLowerCase?.().includes('atras') ? 'warning' : 'success')
   }
   // Remove: tira do estado + apaga no banco
   const removeItem = (key, id) => {
     setState((cur) => ({ ...cur, [key]: cur[key].filter((item) => item.id !== id) }))
     deleteItem(key, id)
+    notify(mutationNotice('delete', key), 'danger')
   }
   // Diagnóstico → salva o laudo e cria um lead no CRM, ambos no banco
   const addDiagnosticSubmission = async (submission) => {
@@ -260,9 +371,11 @@ function App() {
   const isAdmin = currentUser?.role === 'admin'
   const visibleNav = isAdmin ? nav : nav.filter(item => EDITOR_TABS.has(item.id))
   const activeLabel = visibleNav.find((item) => item.id === active)?.label || 'DBE Flow'
+  const activeDescription = pageDescriptions[active] || 'Sistema operacional da agencia DBE.'
 
   return (
     <div className="app-shell">
+      <ToastViewport />
       {/* Sidebar hover-expand — desktop */}
       <aside className="sidebar">
         <div className="brand">
@@ -308,8 +421,10 @@ function App() {
 
       <main>
         <header className="topbar">
-          <div>
+          <div className="topbar-title">
+            <p className="eyebrow">DBE Flow</p>
             <h1>{active === 'dashboard' ? 'Dashboard' : activeLabel}</h1>
+            <p className="topbar-subtitle">{activeDescription}</p>
           </div>
           <div className="top-actions">
             <Badge text={isSupabaseConfigured ? (loading ? 'Sincronizando...' : 'Nuvem') : 'Local'} tone={isSupabaseConfigured ? 'success' : 'gold'} />
@@ -338,11 +453,11 @@ function App() {
         {active === 'calendario' && <Calendario state={state} />}
         {active === 'teleprompter' && <Teleprompter state={state} />}
         {active === 'ai' && <DebyAI state={state} addItem={addItem} updateItem={updateItem} />}
-        {active === 'instagram' && <InstagramStudio state={state} addItem={addItem} updateItem={updateItem} />}
+        {active === 'instagram' && <InstagramAnalytics state={state} currentUser={currentUser} />}
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
         {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
         {active === 'financeiro' && <FinanceiroCompleto />}
-        {active === 'configuracoes' && <Configuracoes currentUser={currentUser} onLogout={logout} theme={theme} setTheme={setTheme} />}
+        {active === 'configuracoes' && <Configuracoes currentUser={currentUser} onProfileUpdate={updateCurrentUser} onLogout={logout} theme={theme} setTheme={setTheme} />}
       </main>
 
       {/* Mobile bottom nav — 4 botões principais (filtrados por role) */}
@@ -362,6 +477,42 @@ function App() {
   )
 }
 
+function ToastViewport() {
+  const [toasts, setToasts] = useState([])
+
+  useEffect(() => {
+    const onToast = (event) => {
+      const toast = {
+        id: crypto.randomUUID(),
+        tone: event.detail?.tone || 'success',
+        message: event.detail?.message || 'Atualizado com sucesso.',
+      }
+      setToasts((current) => [toast, ...current].slice(0, 4))
+      window.setTimeout(() => {
+        setToasts((current) => current.filter((item) => item.id !== toast.id))
+      }, 4200)
+    }
+    window.addEventListener(TOAST_EVENT, onToast)
+    return () => window.removeEventListener(TOAST_EVENT, onToast)
+  }, [])
+
+  if (!toasts.length) return null
+
+  return (
+    <div className="toast-stack" role="status" aria-live="polite">
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast ${toast.tone}`}>
+          <span className="toast-icon">{toast.tone === 'danger' ? <X size={16} /> : <Check size={16} />}</span>
+          <span>{toast.message}</span>
+          <button className="toast-close" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))} aria-label="Fechar aviso">
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LoginPage({ onLogin }) {
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
@@ -370,15 +521,12 @@ function LoginPage({ onLogin }) {
 
   const submit = (e) => {
     e.preventDefault()
+    const members = getTeamMembers()
+    const teamUser = members.find(u => u.email.toLowerCase() === email.toLowerCase())
     // Administradores fixos — usam a senha compartilhada
-    const adminUser = USERS.find(u => u.email.toLowerCase() === email.toLowerCase())
-    if (adminUser && pass === AUTH_PASS) { onLogin(adminUser); return }
+    if (teamUser?.role === 'admin' && pass === AUTH_PASS) { onLogin({ ...teamUser }); return }
     // Editores criados em Configurações — usam senha individual
-    try {
-      const members = JSON.parse(localStorage.getItem('dbe-members') || '[]')
-      const editorUser = members.find(m => m.email.toLowerCase() === email.toLowerCase() && m.password === pass)
-      if (editorUser) { onLogin({ ...editorUser }); return }
-    } catch {}
+    if (teamUser?.password && teamUser.password === pass) { onLogin({ ...teamUser }); return }
     setError('E-mail ou senha incorretos')
   }
 
@@ -2312,6 +2460,240 @@ function InstagramStudio({ state, addItem, updateItem }) {
   )
 }
 
+function InstagramAnalytics({ state, currentUser }) {
+  const params = new URLSearchParams(window.location.search)
+  const initialClientId = params.get('instagram_client_id') || state.clients[0]?.id || ''
+  const [clientId, setClientId] = useState(initialClientId)
+  const [data, setData] = useState({ integration: null, accountMetrics: [], mediaMetrics: [], totals: {} })
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState('')
+  const [aiText, setAiText] = useState('')
+  const selected = state.clients.find((client) => client.id === clientId) || state.clients[0]
+  const integration = data.integration
+  const accountMetrics = data.accountMetrics || []
+  const mediaMetrics = data.mediaMetrics || []
+  const totals = data.totals || {}
+  const topMedia = [...mediaMetrics].sort((a, b) => instagramPostScore(b) - instagramPostScore(a)).slice(0, 8)
+  const chartRows = accountMetrics.slice(-14)
+  const maxChart = Math.max(1, ...chartRows.map((row) => Math.max(Number(row.reach || 0), Number(row.views || 0))))
+
+  const loadStatus = useCallback(async () => {
+    if (!clientId) return
+    setLoading(true)
+    const res = await meta.instagramStatus(clientId, currentUser)
+    setLoading(false)
+    if (res.ok) setData(res)
+    else notify(res.error || 'Nao foi possivel carregar o Instagram.', 'danger')
+  }, [clientId, currentUser])
+
+  useEffect(() => {
+    if (!clientId && state.clients[0]?.id) setClientId(state.clients[0].id)
+  }, [clientId, state.clients])
+
+  useEffect(() => { loadStatus() }, [loadStatus])
+
+  useEffect(() => {
+    const connected = params.get('instagram_connected')
+    const error = params.get('instagram_error')
+    if (connected) notify('Instagram conectado com sucesso.', 'success')
+    if (error) notify(decodeURIComponent(error), 'danger')
+  }, [])
+
+  const connectInstagram = async () => {
+    if (!selected?.id) return
+    setBusy('connect')
+    const res = await meta.instagramAuthUrl(selected.id, currentUser)
+    setBusy('')
+    if (res.ok && res.url) window.location.href = res.url
+    else notify(res.error || 'Falha ao iniciar OAuth da Meta.', 'danger')
+  }
+
+  const syncNow = async () => {
+    if (!selected?.id || !integration) return
+    setBusy('sync')
+    const account = await meta.syncInstagramAccount(selected.id, currentUser)
+    if (!account.ok) {
+      setBusy('')
+      notify(account.error || 'Falha ao sincronizar conta.', 'danger')
+      return
+    }
+    const media = await meta.syncInstagramMedia(selected.id, currentUser)
+    setBusy('')
+    if (media.ok) {
+      setData(media)
+      notify('Metricas do Instagram sincronizadas.', 'success')
+    } else {
+      setData(account)
+      notify(media.error || 'Conta sincronizada, mas posts nao foram atualizados.', 'warning')
+    }
+  }
+
+  const disconnect = async () => {
+    if (!selected?.id || !integration) return
+    setBusy('disconnect')
+    const res = await meta.disconnectInstagram(selected.id, currentUser)
+    setBusy('')
+    if (res.ok) {
+      setData(res)
+      notify('Instagram desconectado deste cliente.', 'success')
+    } else {
+      notify(res.error || 'Falha ao desconectar Instagram.', 'danger')
+    }
+  }
+
+  const generateInsights = async () => {
+    if (!integration) return
+    setBusy('ai')
+    const res = await ai.ask(
+      'analise',
+      'Analise as metricas de Instagram deste cliente e gere insights praticos para a DBE priorizar conteudo, formatos e proximas acoes.',
+      buildInstagramInsightContext(selected, data),
+    )
+    setBusy('')
+    if (res.ok) setAiText(res.text)
+    else notify(res.error || 'Falha ao gerar insights.', 'danger')
+  }
+
+  return (
+    <section className="page-grid">
+      <Panel title="Instagram Analytics">
+        <div className="instagram-analytics-head">
+          <Select
+            label="Cliente"
+            value={selected?.id || ''}
+            onChange={(value) => setClientId(value)}
+            options={state.clients.map((client) => ({ label: client.name, value: client.id }))}
+          />
+          <div className="instagram-status-card">
+            <span>Status da conexao</span>
+            <strong>{integration ? `@${integration.instagram_username || integration.instagram_user_id}` : 'Nao conectado'}</strong>
+            <Badge text={integration ? 'Conectado' : 'Pendente'} tone={integration ? 'success' : 'gold'} />
+          </div>
+          <div className="button-row no-margin">
+            <button className="primary" onClick={connectInstagram} disabled={busy === 'connect' || !selected}>
+              <Camera size={16} /> {integration ? 'Trocar conta' : 'Conectar Instagram'}
+            </button>
+            <button className="secondary" onClick={syncNow} disabled={!integration || busy === 'sync'}>
+              <RefreshCw size={16} /> {busy === 'sync' ? 'Sincronizando...' : 'Sincronizar agora'}
+            </button>
+            <button className="ghost" onClick={disconnect} disabled={!integration || busy === 'disconnect'}>
+              <X size={16} /> Desconectar
+            </button>
+          </div>
+        </div>
+        <p className="muted-note">
+          A tela usa dados salvos no Supabase. A Meta so e chamada quando voce conecta a conta ou clica em sincronizar.
+          {integration?.last_sync_at ? ` Ultima sincronizacao: ${dateTime(integration.last_sync_at)}.` : ''}
+        </p>
+        {loading && <div className="inline-notice">Carregando metricas salvas...</div>}
+      </Panel>
+
+      <div className="grid-4">
+        <MiniStat label="Alcance" value={compactNumber(totals.reach)} tone="blue" />
+        <MiniStat label="Views" value={compactNumber(totals.views)} tone="success" />
+        <MiniStat label="Seguidores" value={compactNumber(totals.followers)} tone="gold" />
+        <MiniStat label="Interacoes" value={compactNumber(Number(totals.likes || 0) + Number(totals.comments || 0) + Number(totals.shares || 0) + Number(totals.saves || 0))} tone="danger" />
+      </div>
+
+      {!integration ? (
+        <Panel title="Conectar conta profissional">
+          <div className="empty-box">
+            Selecione o cliente e conecte uma conta profissional do Instagram vinculada a uma Pagina do Facebook.
+            O historico antigo sera mantido quando a conta for trocada.
+          </div>
+        </Panel>
+      ) : (
+        <div className="grid-2 align-start">
+          <Panel title="Alcance e views por periodo">
+            {chartRows.length ? (
+              <div className="ig-chart">
+                {chartRows.map((row) => (
+                  <div className="ig-chart-row" key={row.metric_date}>
+                    <span>{date(row.metric_date)}</span>
+                    <div>
+                      <i className="reach" style={{ width: `${Math.max(4, (Number(row.reach || 0) / maxChart) * 100)}%` }} />
+                      <i className="views" style={{ width: `${Math.max(4, (Number(row.views || 0) / maxChart) * 100)}%` }} />
+                    </div>
+                    <strong>{compactNumber(row.reach)} / {compactNumber(row.views)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="empty-box">Sincronize para montar o grafico.</div>}
+          </Panel>
+
+          <Panel title="Resumo da conta">
+            <div className="grid-2">
+              <MiniStat label="Visitas ao perfil" value={compactNumber(totals.profileViews)} tone="blue" />
+              <MiniStat label="Cliques no site" value={compactNumber(totals.websiteClicks)} tone="success" />
+              <MiniStat label="Salvamentos" value={compactNumber(totals.saves)} tone="gold" />
+              <MiniStat label="Compartilhamentos" value={compactNumber(totals.shares)} tone="danger" />
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      <Panel title="Ranking de melhores posts e reels">
+        {topMedia.length ? (
+          <div className="ig-ranking">
+            {topMedia.map((post, index) => (
+              <article className="ig-post-row" key={post.id}>
+                <strong>{index + 1}</strong>
+                <div>
+                  <h3>{post.caption || post.media_type || 'Publicacao sem legenda'}</h3>
+                  <span>{post.media_type || 'MIDIA'} - {post.timestamp ? dateTime(post.timestamp) : '-'}</span>
+                </div>
+                <MiniStat label="Score" value={compactNumber(instagramPostScore(post))} tone="blue" />
+                <MiniStat label="Alcance" value={compactNumber(post.reach)} tone="success" />
+                <MiniStat label="Views" value={compactNumber(post.views)} tone="gold" />
+                {post.permalink && <button className="ghost" onClick={() => window.open(post.permalink, '_blank')}><ExternalLink size={14} /></button>}
+              </article>
+            ))}
+          </div>
+        ) : <div className="empty-box">Nenhuma midia sincronizada ainda.</div>}
+      </Panel>
+
+      <Panel title="Insights com IA">
+        <div className="button-row no-margin">
+          <button className="secondary" onClick={generateInsights} disabled={!integration || busy === 'ai'}>
+            <Sparkles size={16} /> {busy === 'ai' ? 'Analisando...' : 'Gerar insights'}
+          </button>
+          <button className="ghost" onClick={() => copyText(aiText)} disabled={!aiText}><Copy size={16} /> Copiar</button>
+        </div>
+        <pre className="ai-output compact-ai">{aiText || 'Sincronize as metricas e gere uma leitura estrategica para proximos conteudos.'}</pre>
+      </Panel>
+    </section>
+  )
+}
+
+function instagramPostScore(post) {
+  return Number(post.reach || 0) + Number(post.views || 0) + (Number(post.likes || 0) * 2) + (Number(post.comments || 0) * 5) + (Number(post.shares || 0) * 6) + (Number(post.saves || 0) * 6)
+}
+
+function compactNumber(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
+}
+
+function buildInstagramInsightContext(client, payload) {
+  const totals = payload.totals || {}
+  const posts = (payload.mediaMetrics || []).slice(0, 10).map((post) => ({
+    tipo: post.media_type,
+    legenda: String(post.caption || '').slice(0, 180),
+    alcance: post.reach,
+    views: post.views,
+    curtidas: post.likes,
+    comentarios: post.comments,
+    compartilhamentos: post.shares,
+    salvamentos: post.saves,
+  }))
+  return JSON.stringify({
+    cliente: client?.name,
+    segmento: client?.segment,
+    instagram: payload.integration?.instagram_username,
+    totais: totals,
+    melhores_publicacoes: posts,
+  }, null, 2)
+}
+
 function Conversas({ state, addItem }) {
   const [waConversations, setWaConversations] = useState([])
   const [messages, setMessages] = useState([])
@@ -2940,7 +3322,7 @@ function FinanceiroCompleto() {
       setReceivables(recList); setPayables(payList)
       const lastKey = rawMonths.length ? rawMonths[rawMonths.length - 1].key : null
       setFcMonth(lastKey); setDreMonth(lastKey)
-    } catch (e) { console.error(e); alert('Falha ao carregar: ' + e.message) }
+    } catch (e) { console.error(e); notify('Falha ao carregar financeiro: ' + e.message, 'danger') }
     finally { setLoading(false) }
   }
   useEffect(() => { loadData() }, [])
@@ -3004,16 +3386,16 @@ function FinanceiroCompleto() {
       const payload = { action: form.id ? 'update' : 'create', date: form.date, desc: form.desc, cat: form.cat, value: parseFloat(form.value) }
       if (form.id) payload.id = form.id
       const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify(payload) })).json()
-      if (r.success) { setTxModal(null); await loadData() } else alert('Erro: ' + r.error)
-    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+      if (r.success) { setTxModal(null); await loadData(); notify(form.id ? 'Transacao atualizada com sucesso.' : 'Transacao criada com sucesso.', 'success') } else notify('Erro: ' + r.error, 'danger')
+    } catch (e) { notify('Erro: ' + e.message, 'danger') } finally { setSaving(false) }
   }
   async function delTx(id) {
     if (!confirm('Excluir esta transação?')) return
     setSaving(true)
     try {
       const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify({ action: 'delete', id }) })).json()
-      if (r.success) await loadData(); else alert('Erro: ' + r.error)
-    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+      if (r.success) { await loadData(); notify('Transacao excluida com sucesso.', 'danger') } else notify('Erro: ' + r.error, 'danger')
+    } catch (e) { notify('Erro: ' + e.message, 'danger') } finally { setSaving(false) }
   }
   async function savePrev(form) {
     setSaving(true)
@@ -3021,16 +3403,16 @@ function FinanceiroCompleto() {
       const payload = { action: form.id ? 'update' : 'create', sheet: form.tipo, vencimento: parseInt(form.vencimento), name: form.name, categoria: form.cat, valor: parseFloat(form.valor) }
       if (form.id) payload.id = parseInt(form.id)
       const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify(payload) })).json()
-      if (r.success) { setPrevModal(null); await loadData() } else alert('Erro: ' + r.error)
-    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+      if (r.success) { setPrevModal(null); await loadData(); notify(form.id ? 'Previsao atualizada com sucesso.' : 'Previsao criada com sucesso.', 'success') } else notify('Erro: ' + r.error, 'danger')
+    } catch (e) { notify('Erro: ' + e.message, 'danger') } finally { setSaving(false) }
   }
   async function delPrev(id, tipo) {
     if (!confirm('Excluir esta previsão?')) return
     setSaving(true)
     try {
       const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify({ action: 'delete', id: parseInt(id), sheet: tipo }) })).json()
-      if (r.success) await loadData(); else alert('Erro: ' + r.error)
-    } catch (e) { alert('Erro: ' + e.message) } finally { setSaving(false) }
+      if (r.success) { await loadData(); notify('Previsao excluida com sucesso.', 'danger') } else notify('Erro: ' + r.error, 'danger')
+    } catch (e) { notify('Erro: ' + e.message, 'danger') } finally { setSaving(false) }
   }
   async function fastReceive(cliente, valor, categoria) {
     await saveTx({ date: new Date().toISOString().split('T')[0], desc: `Pagamento ${cliente}`, cat: categoria || 'Receitas com Clientes Pacotes', value: valor })
@@ -3871,34 +4253,84 @@ function ProducaoVideo({ state, updateItem }) {
   )
 }
 
-function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
+function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme }) {
   const [tab, setTab] = useState('perfil')
   const [name, setName] = useState(currentUser?.name || '')
   const [pass, setPass] = useState('')
   const [newPass, setNewPass] = useState('')
   const [passMsg, setPassMsg] = useState('')
-  const [members, setMembers] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('dbe-members') || 'null') || [...USERS] } catch { return [...USERS] }
-  })
+  const [members, setMembers] = useState(() => getTeamMembers())
   const [newMemberEmail, setNewMemberEmail] = useState('')
   const [newMemberName, setNewMemberName] = useState('')
   const [newMemberRole, setNewMemberRole] = useState('editor')
   const [newMemberPass, setNewMemberPass] = useState('')
   const [memberMsg, setMemberMsg] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar || '')
+  const [profileMsg, setProfileMsg] = useState('')
+  const [avatarBusy, setAvatarBusy] = useState(false)
   const avatarInputRef = useRef(null)
 
-  const handleAvatarFile = (e) => {
+  const handleAvatarFile = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => setAvatarUrl(ev.target.result)
-    reader.readAsDataURL(file)
+    setProfileMsg('')
+    if (!file.type.startsWith('image/')) {
+      setProfileMsg('Selecione um arquivo de imagem.')
+      notify('Selecione um arquivo de imagem.', 'danger')
+      return
+    }
+    if (file.size > AVATAR_MAX_FILE_SIZE) {
+      setProfileMsg('A imagem precisa ter ate 8 MB.')
+      notify('A imagem precisa ter ate 8 MB.', 'danger')
+      return
+    }
+    setAvatarBusy(true)
+    try {
+      const resized = await resizeAvatarFile(file)
+      setAvatarUrl(resized)
+      setProfileMsg('Foto carregada. Clique em Salvar perfil para confirmar.')
+      notify('Foto carregada. Salve o perfil para confirmar.', 'success')
+    } catch (err) {
+      const message = err.message || 'Nao foi possivel carregar a foto.'
+      setProfileMsg(message)
+      notify(message, 'danger')
+    } finally {
+      setAvatarBusy(false)
+      e.target.value = ''
+    }
   }
 
   const saveMembers = (m) => {
     setMembers(m)
-    localStorage.setItem('dbe-members', JSON.stringify(m))
+    persistTeamMembers(m)
+  }
+
+  const saveProfile = () => {
+    if (!name.trim()) {
+      setProfileMsg('Informe um nome de exibicao.')
+      notify('Informe um nome de exibicao.', 'danger')
+      return
+    }
+    try {
+      const updated = { ...currentUser, name: name.trim(), avatar: avatarUrl || null }
+      const nextMembers = getTeamMembers().map((member) =>
+        member.email.toLowerCase() === updated.email.toLowerCase()
+          ? { ...member, name: updated.name, avatar: updated.avatar }
+          : member
+      )
+      const exists = nextMembers.some((member) => member.email.toLowerCase() === updated.email.toLowerCase())
+      const finalMembers = exists ? nextMembers : [...nextMembers, updated]
+      saveMembers(finalMembers)
+      onProfileUpdate(updated)
+      setProfileMsg('Perfil salvo com sucesso.')
+      notify('Perfil salvo com sucesso.', 'success')
+    } catch (err) {
+      const message = err.name === 'QuotaExceededError'
+        ? 'Nao foi possivel salvar: o armazenamento do navegador esta cheio.'
+        : 'Nao foi possivel salvar o perfil.'
+      setProfileMsg(message)
+      notify(message, 'danger')
+    }
   }
 
   const changePassword = () => {
@@ -3956,20 +4388,17 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
                   : (name || currentUser?.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
                 }
               </div>
-              <p style={{fontSize:12, color:'var(--muted)', margin:0}}>Clique na foto para trocar</p>
-              <input ref={avatarInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={handleAvatarFile} />
+              <p style={{fontSize:12, color:'var(--muted)', margin:0}}>{avatarBusy ? 'Preparando foto...' : 'Clique na foto para trocar'}</p>
+              <input ref={avatarInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={handleAvatarFile} disabled={avatarBusy} />
             </div>
             <div className="form-grid">
               <Input label="Nome de exibição" value={name} onChange={setName} />
               <Input label="E-mail" value={currentUser?.email || ''} onChange={() => {}} />
               <label className="field"><span>Papel</span><input readOnly value={currentUser?.role === 'admin' ? 'Administrador' : 'Editor'} /></label>
             </div>
+            {profileMsg && <p className={`inline-notice ${profileMsg.includes('sucesso') || profileMsg.includes('carregada') ? 'success' : 'danger'}`}>{profileMsg}</p>}
             <div className="button-row" style={{marginTop:12}}>
-              <button className="primary" onClick={() => {
-                const updated = { ...currentUser, name, avatar: avatarUrl }
-                localStorage.setItem('dbe-auth-v1', JSON.stringify(updated))
-                alert('Perfil atualizado! Recarregue para ver as mudanças.')
-              }}>
+              <button className="primary" onClick={saveProfile} disabled={avatarBusy}>
                 <Check size={14} /> Salvar perfil
               </button>
               <button className="secondary" style={{color:'var(--red)'}} onClick={onLogout}>
@@ -4021,7 +4450,10 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
               {members.map(m => (
                 <div key={m.email} className="list-item">
                   <div className="chat-avatar" style={{width:36, height:36, fontSize:13, flexShrink:0}}>
-                    {(m.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()}
+                    {m.avatar
+                      ? <img src={m.avatar} alt={m.name} style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}} />
+                      : (m.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
+                    }
                   </div>
                   <div style={{flex:1}}>
                     <strong style={{display:'block', fontSize:14}}>{m.name}</strong>
@@ -4222,6 +4654,8 @@ function Modal({ title, open, onClose, children, wide = false }) {
 }
 
 function MiniStat({ label, value, tone = 'blue', onClick }) {
+  const toneIcons = { success: TrendingUp, gold: CalendarDays, danger: Activity, blue: Gauge, purple: Sparkles }
+  const ToneIcon = toneIcons[tone] || Activity
   return (
     <div
       className={`mini-stat ${tone}${onClick ? ' clickable' : ''}`}
@@ -4229,7 +4663,10 @@ function MiniStat({ label, value, tone = 'blue', onClick }) {
       style={onClick ? {cursor:'pointer'} : undefined}
       title={onClick ? 'Clique para ver detalhes' : undefined}
     >
-      <span>{label}</span>
+      <div className="mini-stat-head">
+        <span>{label}</span>
+        <em className="mini-stat-icon"><ToneIcon size={15} /></em>
+      </div>
       <strong>{value}</strong>
     </div>
   )
