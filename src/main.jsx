@@ -154,7 +154,7 @@ function App() {
     localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
-  // Carrega resumo financeiro para o Dashboard
+  // Carrega resumo financeiro para o Dashboard (usa mês atual, igual ao Controle Mensal)
   useEffect(() => {
     fetch(`${FIN_API}?action=read_all`)
       .then(r => r.json())
@@ -163,12 +163,16 @@ function App() {
         const raw = result.transactions || []
         const { monthlyStats } = finProcess(raw)
         if (monthlyStats.length) {
-          const last = monthlyStats[monthlyStats.length - 1]
+          const now = new Date()
+          const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+          const target = monthlyStats.find(m => m.key === curKey) || monthlyStats[monthlyStats.length - 1]
+          const recPend = (result.receivables || []).reduce((s, r) => s + Number(r.valor || 0), 0)
           setFinSummary({
-            mrr: last.rec,
-            expenses: Math.abs(last.desp),
-            balance: last.saldo,
-            receivables: (result.receivables || []).reduce((s, r) => s + Number(r.valor || 0), 0),
+            mrr: target.rec,
+            expenses: Math.abs(target.desp),
+            balance: target.resultado,
+            receivables: recPend,
+            month: target.label,
           })
         }
       })
@@ -439,8 +443,8 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
   ]
   const rec = finSummary?.mrr ?? metrics.monthly
   const rcvbl = finSummary?.receivables ?? metrics.receivable
-  const recLabel = finSummary ? 'Receita (mês atual)' : 'Receita mensal estimada'
-  const rcvblLabel = finSummary ? 'A receber (previsto)' : 'Contas a receber'
+  const recLabel = finSummary ? `Receita realizada (${finSummary.month || 'mês atual'})` : 'Receita mensal estimada'
+  const rcvblLabel = finSummary ? 'Contas a receber (previsto)' : 'Contas a receber'
 
   return (
     <section className="page-grid">
@@ -2169,6 +2173,30 @@ function Conversas({ state, addItem }) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
+  const [contactNotes, setContactNotes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dbe-contact-notes') || '{}') } catch { return {} }
+  })
+  const [contactTags, setContactTags] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dbe-contact-tags') || '{}') } catch { return {} }
+  })
+
+  const CONTACT_TAG_LIST = ['Cliente', 'Lead novo', 'Marcou reunião', 'Não compareceu', 'Fechou contrato', 'Não fechou', 'Reativação', 'Quente', 'Morno', 'Frio']
+
+  const getContactKey = (c) => c?.phone || c?.id || ''
+
+  const saveNote = (contactKey, text) => {
+    const updated = { ...contactNotes, [contactKey]: text }
+    setContactNotes(updated)
+    localStorage.setItem('dbe-contact-notes', JSON.stringify(updated))
+  }
+
+  const toggleTag = (contactKey, tag) => {
+    const current = contactTags[contactKey] || []
+    const next = current.includes(tag) ? current.filter(t => t !== tag) : [...current, tag]
+    const updated = { ...contactTags, [contactKey]: next }
+    setContactTags(updated)
+    localStorage.setItem('dbe-contact-tags', JSON.stringify(updated))
+  }
   const bodyRef = useRef(null)
   const fileInputRef = useRef(null)
   const recorderRef = useRef(null)
@@ -2534,27 +2562,66 @@ function Conversas({ state, addItem }) {
             {selected.phone && <p style={{margin:0, fontSize:13, color:'var(--muted)'}}>+{selected.phone}</p>}
             <span className="badge" style={{marginTop:4}}>{selected.type}</span>
           </div>
-          {crmInfo && (
-            <div style={{padding:'0 16px', display:'flex', flexDirection:'column', gap:8}}>
-              {crmInfo.segment && <div className="profile-info-row"><span>Segmento</span><strong>{crmInfo.segment}</strong></div>}
-              {crmInfo.plan && <div className="profile-info-row"><span>Plano</span><strong>{crmInfo.plan}</strong></div>}
-              {crmInfo.status && <div className="profile-info-row"><span>Status</span><strong>{crmInfo.status}</strong></div>}
-              {crmInfo.monthly && <div className="profile-info-row"><span>Mensalidade</span><strong>{money(Number(crmInfo.monthly))}</strong></div>}
-              {crmInfo.next && <div className="profile-info-row"><span>Próxima ação</span><strong>{crmInfo.next}</strong></div>}
-            </div>
-          )}
-          <div style={{padding:'16px', display:'flex', flexDirection:'column', gap:8}}>
-            <p style={{fontSize:12, color:'var(--muted)', margin:'0 0 4px', textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600}}>Gatilhos rápidos</p>
-            <button className="secondary" style={{justifyContent:'flex-start', gap:8}} onClick={() => applyQuickTrigger('cobranca')}>
-              💰 Cobrança / PIX
-            </button>
-            <button className="secondary" style={{justifyContent:'flex-start', gap:8}} onClick={() => applyQuickTrigger('aprovacao')}>
-              ✅ Material para aprovação
-            </button>
-            <button className="secondary" style={{justifyContent:'flex-start', gap:8}} onClick={() => { openWhatsApp(selected.phone, ''); setProfileOpen(false) }}>
-              <MessageCircle size={14} /> Abrir no WhatsApp
-            </button>
-          </div>
+          {(() => {
+            const cKey = getContactKey(selected)
+            const tags = contactTags[cKey] || []
+            const note = contactNotes[cKey] || ''
+            return (
+              <>
+                {crmInfo && (
+                  <div style={{padding:'0 16px', display:'flex', flexDirection:'column', gap:6}}>
+                    {crmInfo.segment && <div className="profile-info-row"><span>Segmento</span><strong>{crmInfo.segment}</strong></div>}
+                    {crmInfo.plan && <div className="profile-info-row"><span>Plano</span><strong>{crmInfo.plan}</strong></div>}
+                    {crmInfo.status && <div className="profile-info-row"><span>Status</span><strong>{crmInfo.status}</strong></div>}
+                    {crmInfo.monthly && <div className="profile-info-row"><span>Mensalidade</span><strong>{money(Number(crmInfo.monthly))}</strong></div>}
+                    {crmInfo.next && <div className="profile-info-row"><span>Próxima ação</span><strong>{crmInfo.next}</strong></div>}
+                  </div>
+                )}
+
+                {/* Tags */}
+                <div style={{padding:'12px 16px'}}>
+                  <p className="profile-section-title">Tags</p>
+                  <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
+                    {CONTACT_TAG_LIST.map(tag => (
+                      <button
+                        key={tag}
+                        className={`contact-tag-btn${tags.includes(tag) ? ' active' : ''}`}
+                        onClick={() => toggleTag(cKey, tag)}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Observações */}
+                <div style={{padding:'0 16px 12px'}}>
+                  <p className="profile-section-title">Observações</p>
+                  <textarea
+                    className="profile-notes-textarea"
+                    value={note}
+                    onChange={e => saveNote(cKey, e.target.value)}
+                    placeholder="Anotações sobre este contato..."
+                    rows={4}
+                  />
+                </div>
+
+                {/* Gatilhos rápidos */}
+                <div style={{padding:'0 16px 16px', display:'flex', flexDirection:'column', gap:8}}>
+                  <p className="profile-section-title">Gatilhos rápidos</p>
+                  <button className="secondary" style={{justifyContent:'flex-start', gap:8, fontSize:13}} onClick={() => applyQuickTrigger('cobranca')}>
+                    💰 Cobrança / PIX
+                  </button>
+                  <button className="secondary" style={{justifyContent:'flex-start', gap:8, fontSize:13}} onClick={() => applyQuickTrigger('aprovacao')}>
+                    ✅ Material para aprovação
+                  </button>
+                  <button className="secondary" style={{justifyContent:'flex-start', gap:8, fontSize:13}} onClick={() => { openWhatsApp(selected.phone, ''); setProfileOpen(false) }}>
+                    <MessageCircle size={14} /> Abrir no WhatsApp
+                  </button>
+                </div>
+              </>
+            )
+          })()}
         </div>
       )}
     </section>

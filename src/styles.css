@@ -1504,9 +1504,10 @@ td small {
 
 /* ===== MAIN CHAT AREA ===== */
 .conversation-main {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  overflow: hidden;
   background: #07101b;
 }
 
@@ -1545,6 +1546,8 @@ td small {
 }
 
 .chat-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px 20px;
   display: flex;
@@ -1553,6 +1556,11 @@ td small {
   background:
     radial-gradient(ellipse at top, rgba(59,143,232,.04), transparent 60%),
     #07101b;
+}
+
+.chat-template-bar,
+.chat-compose {
+  flex-shrink: 0;
 }
 
 /* ===== BOLHAS DE MENSAGEM WHATSAPP ===== */
@@ -2533,7 +2541,60 @@ td small {
 }
 
 .profile-info-row span { color: var(--muted); }
-.profile-info-row strong { color: var(--text); }
+.profile-info-row strong { color: var(--text); text-align: right; max-width: 60%; }
+
+.profile-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin: 0;
+}
+
+.contact-tag-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.contact-tag-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.contact-tag-btn.active {
+  background: rgba(59,143,232,.15);
+  border-color: rgba(59,143,232,.4);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.profile-notes-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.profile-notes-textarea:focus {
+  border-color: var(--blue);
+}
 
 /* ===== GRAVAÇÃO DE ÁUDIO ===== */
 .chat-recording-bar {
@@ -2779,22 +2840,17 @@ td small {
 @media (max-width: 768px) {
   .conversation-shell {
     grid-template-columns: 1fr;
-    height: auto;
-    min-height: calc(100vh - 130px);
+    height: calc(100vh - 130px);
+    min-height: 500px;
   }
 
   .conversation-list {
-    height: 200px;
-    min-height: 160px;
-    max-height: 240px;
+    max-height: 220px;
   }
 
   .conversation-main {
-    min-height: 400px;
-  }
-
-  .chat-body {
-    min-height: 280px;
+    min-height: 0;
+    height: 100%;
   }
 
   .contact-profile-panel {
