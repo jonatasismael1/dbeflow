@@ -21,21 +21,20 @@ export default async (req) => {
       { headers: sbHeaders },
     )
     const clients = await clientRes.json().catch(() => [])
-    const currentData = clients[0]?.data || {}
-    if (!clients[0]) return jsonRes({ error: 'Cliente nao encontrado' }, 404)
-
+    const currentData = Array.isArray(clients) && clients[0] ? clients[0].data || {} : {}
     const folderUrl = folderRes.data.webViewLink || driveUrl(folderId)
-    await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}`, {
-      method: 'PATCH',
-      headers: sbHeaders,
-      body: JSON.stringify({
-        data: {
-          ...currentData,
-          drive_folder_id: folderId,
-          drive_folder_url: folderUrl,
-        },
-      }),
-    })
+
+    // Atualiza o banco se o cliente existir; se não, continua mesmo assim
+    // pois o frontend (updateItem) salva o drive_folder_id no estado local
+    if (Array.isArray(clients) && clients[0]) {
+      await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}`, {
+        method: 'PATCH',
+        headers: sbHeaders,
+        body: JSON.stringify({
+          data: { ...currentData, drive_folder_id: folderId, drive_folder_url: folderUrl },
+        }),
+      })
+    }
 
     logDrive('link_client_folder', 'client', clientId, { folder_id: folderId, folder_name: folderRes.data.name })
 
@@ -44,4 +43,3 @@ export default async (req) => {
     return jsonRes({ error: err.message }, 500)
   }
 }
-
