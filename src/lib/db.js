@@ -50,7 +50,7 @@ export async function loadAll(seed) {
   await Promise.all(TABLES.map(async (key) => {
     const table = TABLE_MAP[key]
     const { data, error } = await supabase.rpc('dbe_fetch', { p_table: table })
-    if (error) { console.warn('[db] erro ao carregar', table, error.message); return }
+    if (error) { console.warn('[db] erro ao carregar', table, error.message); state[key] = seed[key] || []; return }
     state[key] = (data || []).map(fromRow)
   }))
   return state
