@@ -14,13 +14,13 @@ const EDITED_VIDEO_FOLDER = 'Vídeo editado'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 
 async function getScript(scriptId) {
-  const res = await fetch(`${SB_URL}/rest/v1/scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
+  const res = await fetch(`${SB_URL}/rest/v1/dbe_scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
   const rows = await res.json().catch(() => [])
   return rows[0] || null
 }
 
 async function patchScript(scriptId, data) {
-  await fetch(`${SB_URL}/rest/v1/scripts?id=eq.${scriptId}`, {
+  await fetch(`${SB_URL}/rest/v1/dbe_scripts?id=eq.${scriptId}`, {
     method: 'PATCH',
     headers: sbHeaders,
     body: JSON.stringify({ data }),

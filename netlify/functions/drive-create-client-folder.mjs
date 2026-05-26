@@ -19,7 +19,7 @@ export default async (req) => {
   try {
     // Verifica se o cliente já tem pasta (campo drive_folder_id no JSONB data)
     const clientRes = await fetch(
-      `${SB_URL}/rest/v1/clients?id=eq.${clientId}&select=id,data`,
+      `${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}&select=id,data`,
       { headers: sbHeaders },
     )
     const clients = await clientRes.json().catch(() => [])
@@ -43,7 +43,7 @@ export default async (req) => {
 
     // Atualiza o JSONB do cliente no Supabase
     const currentData = clients[0]?.data || {}
-    await fetch(`${SB_URL}/rest/v1/clients?id=eq.${clientId}`, {
+    await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}`, {
       method: 'PATCH',
       headers: sbHeaders,
       body: JSON.stringify({

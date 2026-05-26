@@ -22,7 +22,7 @@ export default async (req) => {
   try {
     // Obtém (ou cria) a pasta do cliente
     const clientRes = await fetch(
-      `${SB_URL}/rest/v1/clients?id=eq.${clientId}&select=id,data`,
+      `${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}&select=id,data`,
       { headers: sbHeaders },
     )
     const clients = await clientRes.json().catch(() => [])
@@ -34,7 +34,7 @@ export default async (req) => {
       const clientFolder = await createDriveFolder(clientName, ROOT_FOLDER_ID, token)
       clientFolderId = clientFolder.id
       const currentData = clients[0]?.data || {}
-      await fetch(`${SB_URL}/rest/v1/clients?id=eq.${clientId}`, {
+      await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}`, {
         method: 'PATCH',
         headers: sbHeaders,
         body: JSON.stringify({

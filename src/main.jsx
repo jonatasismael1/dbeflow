@@ -451,7 +451,7 @@ function App() {
         {active === 'contratos' && <Contratos state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conteudo' && <Conteudo state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'cronograma' && <CronogramaConteudo state={state} addItem={addItem} updateItem={updateItem} />}
-        {active === 'calendario' && <Calendario state={state} />}
+        {active === 'calendario' && <Calendario state={state} updateItem={updateItem} />}
         {active === 'teleprompter' && <Teleprompter state={state} />}
         {active === 'ai' && <DebyAI state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'instagram' && <InstagramAnalytics state={state} currentUser={currentUser} />}
@@ -2010,7 +2010,7 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
 // ============================================================
 // CALENDÁRIO — 3 modos: edição, capa, postagem
 // ============================================================
-function Calendario({ state }) {
+function Calendario({ state, updateItem }) {
   const [viewMode, setViewMode] = useState('postagem') // 'edicao' | 'capa' | 'postagem'
   const [calView, setCalView] = useState('week') // 'week' | 'month'
   const [weekOffset, setWeekOffset] = useState(0)
@@ -2045,13 +2045,17 @@ function Calendario({ state }) {
     if (viewMode === 'edicao') {
       scripts.forEach((s) => {
         const d = s.edit_date || s.due_date || s.delivery_date
-        if (d) events.push({ date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.editor || s.owner || 'DBE', type: 'edicao', status: s.status, client: s.client, format: s.format, member: s.editor || s.owner })
+        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.editor || s.owner || 'DBE', type: 'edicao', status: s.status, client: s.client, format: s.format, member: s.editor || s.owner })
       })
       ;(state.cronograma || []).forEach((c) => {
         const d = c.edit_date || c.due
         if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.editor || c.owner || 'DBE', type: 'edicao', status: c.status, client: c.client, format: c.format, member: c.editor || c.owner })
       })
     } else if (viewMode === 'capa') {
+      scripts.forEach((s) => {
+        const d = s.cover_date
+        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.client || '', type: 'capa', status: s.status, client: s.client, format: s.format, member: s.responsible || s.owner })
+      })
       posts.forEach((p) => {
         const d = p.cover_date || p.date
         if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 28) + '...' : 'Post', sub: p.client || p.network || '', type: 'capa', status: p.status, client: p.client, format: p.network })
@@ -2061,6 +2065,10 @@ function Calendario({ state }) {
         if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Capa', sub: c.client || '', type: 'capa', status: c.status, client: c.client, format: c.format })
       })
     } else {
+      scripts.forEach((s) => {
+        const d = s.post_date
+        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.client || '', type: 'postagem', status: s.status, client: s.client, format: s.format, member: s.responsible || s.owner })
+      })
       posts.forEach((p) => {
         const d = p.date || p.scheduled_date
         if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 28) + '...' : 'Post', sub: p.client || p.network || '', type: 'postagem', status: p.status, client: p.client, format: p.network })
@@ -2120,16 +2128,20 @@ function Calendario({ state }) {
   const rem = (7 - (cells.length % 7)) % 7
   for (let i = 1; i <= rem; i++) cells.push({ day: i, otherMonth: true })
 
-  // Encontra o post/script original pelo evento para exibir detalhes
+  // Encontra o post/script original pelo evento
   const findSource = (ev) => {
     if (!ev) return null
     const posts = state.posts || []
     const scripts = state.scripts || []
     const cronograma = state.cronograma || []
+    if (ev.id) {
+      const byId = scripts.find(s => s.id === ev.id) || posts.find(p => p.id === ev.id)
+      if (byId) return byId
+    }
     return posts.find(p => {
       const d = p.date || p.cover_date || p.scheduled_date
       return d && d.slice(0,10) === ev.date && (p.caption?.includes(ev.label.slice(0,20)) || p.client === ev.client)
-    }) || scripts.find(s => s.title === ev.label || s.client === ev.client) || cronograma.find(c => (c.title || c.format) === ev.label) || ev
+    }) || scripts.find(s => s.title === ev.label && s.client === ev.client) || cronograma.find(c => (c.title || c.format) === ev.label) || ev
   }
 
   const dayEventsForPanel = selectedDay ? allEvents.filter(e => e.date === selectedDay) : []
@@ -2225,46 +2237,125 @@ function Calendario({ state }) {
         </div>
       )}
 
-      {/* Modal de detalhes do post/evento */}
-      {selectedEvent && (
-        <div className="fin-modal-overlay" onClick={() => setSelectedEvent(null)}>
-          <div className="fin-modal" onClick={e => e.stopPropagation()} style={{maxWidth:480}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-              <h3 style={{margin:0,fontSize:16}}>{selectedEvent.label}</h3>
-              <button className="icon-btn" onClick={() => setSelectedEvent(null)}><X size={16} /></button>
-            </div>
-            {(() => {
-              const src = findSource(selectedEvent)
-              const rows = [
-                ['Data', selectedEvent.date ? new Date(selectedEvent.date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'],
-                ['Cliente', src?.client || selectedEvent.client || '—'],
-                ['Status', src?.status || selectedEvent.status || '—'],
-                ['Formato / Rede', src?.network || src?.format || selectedEvent.format || '—'],
-                ['Responsável', src?.owner || src?.editor || selectedEvent.member || selectedEvent.sub || '—'],
-              ]
-              return (
-                <>
-                  <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
-                    {rows.map(([label, value]) => value && value !== '—' ? (
-                      <div key={label} className="profile-info-row" style={{padding:'6px 0'}}>
-                        <span>{label}</span><strong style={{textAlign:'right'}}>{value}</strong>
-                      </div>
-                    ) : null)}
-                  </div>
-                  {(src?.caption || src?.hook || src?.body) && (
-                    <div style={{background:'var(--surface-2)', borderRadius:8, padding:'12px 14px', marginBottom:12}}>
-                      {src.hook && <p style={{margin:'0 0 8px', fontSize:13, fontStyle:'italic', color:'var(--blue)'}}>"{src.hook}"</p>}
-                      {src.caption && <p style={{margin:'0 0 8px', fontSize:13, whiteSpace:'pre-wrap'}}>{src.caption}</p>}
-                      {src.body && <p style={{margin:0, fontSize:12, color:'var(--muted)', whiteSpace:'pre-wrap'}}>{src.body}</p>}
+      {/* Modal de detalhes do post/evento — com edição de status */}
+      {selectedEvent && (() => {
+        const src = findSource(selectedEvent)
+        const isScript = src && (state.scripts || []).some(s => s.id === src.id)
+        const isPost   = src && (state.posts   || []).some(p => p.id === src.id)
+        const tableKey = isScript ? 'scripts' : isPost ? 'posts' : null
+        const currentStatus = src?.status || selectedEvent.status || 'Ideia'
+
+        const changeStatus = (newStatus) => {
+          if (!tableKey || !src?.id || !updateItem) return
+          updateItem(tableKey, src.id, { ...src, status: newStatus, updatedAt: new Date().toISOString() })
+          setSelectedEvent({ ...selectedEvent, status: newStatus })
+        }
+
+        const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : null
+
+        const infoRows = [
+          ['Cliente',      src?.client || selectedEvent.client],
+          ['Formato',      src?.format || selectedEvent.format],
+          ['Responsável',  src?.responsible || src?.owner || src?.editor || selectedEvent.member],
+          ['Prioridade',   src?.priority],
+          ['Data de Edição',   fmtDate(src?.edit_date || src?.due_date || src?.delivery_date)],
+          ['Data de Capa',     fmtDate(src?.cover_date)],
+          ['Data de Postagem', fmtDate(src?.post_date || selectedEvent.date)],
+          ['Rede social',  src?.network],
+          ['Pilar',        src?.pillar],
+        ].filter(([, v]) => v)
+
+        return (
+          <div className="fin-modal-overlay" onClick={() => setSelectedEvent(null)}>
+            <div className="fin-modal" onClick={e => e.stopPropagation()} style={{maxWidth:520, maxHeight:'90vh', overflowY:'auto'}}>
+              {/* Cabeçalho */}
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14,gap:8}}>
+                <div>
+                  <h3 style={{margin:0,fontSize:16,lineHeight:1.3}}>{src?.title || selectedEvent.label}</h3>
+                  {src?.client && <span style={{fontSize:12,color:'var(--muted)'}}>{src.client}</span>}
+                </div>
+                <button className="icon-btn" onClick={() => setSelectedEvent(null)}><X size={16} /></button>
+              </div>
+
+              {/* Status atual + troca rápida */}
+              <div style={{marginBottom:16}}>
+                <p style={{fontSize:11,color:'var(--muted)',margin:'0 0 6px',textTransform:'uppercase',letterSpacing:'.05em'}}>Status</p>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {CONTENT_STATUSES.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => changeStatus(s)}
+                      style={{
+                        fontSize:11, padding:'3px 10px', borderRadius:20, border:'1px solid var(--border)',
+                        background: s === currentStatus ? 'var(--primary)' : 'var(--surface-2)',
+                        color: s === currentStatus ? '#fff' : 'var(--text)',
+                        cursor: tableKey ? 'pointer' : 'default', opacity: tableKey ? 1 : 0.6,
+                      }}
+                    >{s}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Informações */}
+              {infoRows.length > 0 && (
+                <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:14}}>
+                  {infoRows.map(([label, value]) => (
+                    <div key={label} className="profile-info-row" style={{padding:'5px 0'}}>
+                      <span>{label}</span><strong style={{textAlign:'right',fontSize:13}}>{value}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Roteiro / conteúdo */}
+              {(src?.hook || src?.body || src?.script_body || src?.caption) && (
+                <div style={{background:'var(--surface-2)',borderRadius:8,padding:'12px 14px',marginBottom:10}}>
+                  {src.hook && (
+                    <div style={{marginBottom:10}}>
+                      <p style={{fontSize:10,color:'var(--muted)',margin:'0 0 4px',textTransform:'uppercase',letterSpacing:'.05em'}}>Hook</p>
+                      <p style={{margin:0,fontSize:13,fontStyle:'italic',color:'var(--blue)',whiteSpace:'pre-wrap'}}>"{src.hook}"</p>
                     </div>
                   )}
-                  {src?.cta && <p style={{fontSize:12, color:'var(--green)', margin:0}}><strong>CTA:</strong> {src.cta}</p>}
-                </>
-              )
-            })()}
+                  {(src.body || src.script_body) && (
+                    <div style={{marginBottom:10}}>
+                      <p style={{fontSize:10,color:'var(--muted)',margin:'0 0 4px',textTransform:'uppercase',letterSpacing:'.05em'}}>Roteiro / Corpo</p>
+                      <p style={{margin:0,fontSize:12,whiteSpace:'pre-wrap',color:'var(--text)'}}>{src.body || src.script_body}</p>
+                    </div>
+                  )}
+                  {src.caption && (
+                    <div style={{marginBottom:src.cta ? 10 : 0}}>
+                      <p style={{fontSize:10,color:'var(--muted)',margin:'0 0 4px',textTransform:'uppercase',letterSpacing:'.05em'}}>Legenda</p>
+                      <p style={{margin:0,fontSize:12,whiteSpace:'pre-wrap'}}>{src.caption}</p>
+                    </div>
+                  )}
+                  {src.cta && (
+                    <div>
+                      <p style={{fontSize:10,color:'var(--muted)',margin:'0 0 4px',textTransform:'uppercase',letterSpacing:'.05em'}}>CTA</p>
+                      <p style={{margin:0,fontSize:12,color:'var(--green)',fontWeight:500}}>{src.cta}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Observações */}
+              {src?.notes && (
+                <div style={{background:'var(--surface-2)',borderRadius:8,padding:'10px 14px'}}>
+                  <p style={{fontSize:10,color:'var(--muted)',margin:'0 0 4px',textTransform:'uppercase',letterSpacing:'.05em'}}>Observações</p>
+                  <p style={{margin:0,fontSize:12,whiteSpace:'pre-wrap'}}>{src.notes}</p>
+                </div>
+              )}
+
+              {/* Referência */}
+              {src?.reference_url && (
+                <a href={src.reference_url} target="_blank" rel="noreferrer"
+                  style={{display:'flex',alignItems:'center',gap:6,marginTop:10,fontSize:12,color:'var(--blue)'}}>
+                  <ExternalLink size={13} /> Ver referência
+                </a>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {calView === 'week' ? (
         <>

@@ -14,20 +14,20 @@ import {
 const EDITED_VIDEO_FOLDER = 'Vídeo editado'
 
 async function getClient(clientId) {
-  const res = await fetch(`${SB_URL}/rest/v1/clients?id=eq.${clientId}&select=id,data`, { headers: sbHeaders })
+  const res = await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}&select=id,data`, { headers: sbHeaders })
   const rows = await res.json().catch(() => [])
   return rows[0] || null
 }
 
 async function getScriptData(scriptId) {
   if (!scriptId) return {}
-  const res = await fetch(`${SB_URL}/rest/v1/scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
+  const res = await fetch(`${SB_URL}/rest/v1/dbe_scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
   const rows = await res.json().catch(() => [])
   return rows[0]?.data || {}
 }
 
 async function patchClientFolder(clientId, currentData, folder) {
-  await fetch(`${SB_URL}/rest/v1/clients?id=eq.${clientId}`, {
+  await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}`, {
     method: 'PATCH',
     headers: sbHeaders,
     body: JSON.stringify({
@@ -42,10 +42,10 @@ async function patchClientFolder(clientId, currentData, folder) {
 
 async function patchScriptFolder(scriptId, folder, editedFolder, title) {
   if (!scriptId) return
-  const res = await fetch(`${SB_URL}/rest/v1/scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
+  const res = await fetch(`${SB_URL}/rest/v1/dbe_scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
   const rows = await res.json().catch(() => [])
   const currentData = rows[0]?.data || {}
-  await fetch(`${SB_URL}/rest/v1/scripts?id=eq.${scriptId}`, {
+  await fetch(`${SB_URL}/rest/v1/dbe_scripts?id=eq.${scriptId}`, {
     method: 'PATCH',
     headers: sbHeaders,
     body: JSON.stringify({

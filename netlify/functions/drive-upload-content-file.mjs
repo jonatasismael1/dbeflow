@@ -6,7 +6,7 @@ export default async (req) => {
   if (!scriptId || !folderId || !fileName) return jsonRes({ error: 'scriptId, folderId e fileName sao obrigatorios' }, 400)
 
   try {
-    const scriptRes = await fetch(`${SB_URL}/rest/v1/scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
+    const scriptRes = await fetch(`${SB_URL}/rest/v1/dbe_scripts?id=eq.${scriptId}&select=id,data`, { headers: sbHeaders })
     const scripts = await scriptRes.json().catch(() => [])
     const script = scripts[0]
     if (!script) return jsonRes({ error: 'Roteiro nao encontrado' }, 404)

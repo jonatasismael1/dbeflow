@@ -17,7 +17,7 @@ export default async (req) => {
     if (folderRes.data.mimeType !== FOLDER_MIME) return jsonRes({ error: 'Selecione uma pasta do Drive' }, 400)
 
     const clientRes = await fetch(
-      `${SB_URL}/rest/v1/clients?id=eq.${clientId}&select=id,data`,
+      `${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}&select=id,data`,
       { headers: sbHeaders },
     )
     const clients = await clientRes.json().catch(() => [])
@@ -25,7 +25,7 @@ export default async (req) => {
     if (!clients[0]) return jsonRes({ error: 'Cliente nao encontrado' }, 404)
 
     const folderUrl = folderRes.data.webViewLink || driveUrl(folderId)
-    await fetch(`${SB_URL}/rest/v1/clients?id=eq.${clientId}`, {
+    await fetch(`${SB_URL}/rest/v1/dbe_clients?id=eq.${clientId}`, {
       method: 'PATCH',
       headers: sbHeaders,
       body: JSON.stringify({
