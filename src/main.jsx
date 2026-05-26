@@ -69,10 +69,12 @@ const THEME_KEY = 'dbe-theme-v1'
 
 const USERS = [
   { email: 'assessoriadbe@gmail.com', name: 'DBE Digital', role: 'admin', avatar: null },
-  { email: 'thayaneluise@gmail.com', name: 'Thayane', role: 'member', avatar: null },
+  { email: 'thayaneluise@gmail.com', name: 'Thayane', role: 'admin', avatar: null },
   { email: 'jonatas.ismael25@gmail.com', name: 'Jonatas', role: 'admin', avatar: null },
 ]
 const AUTH_PASS = 'Db3digit@l'
+// Abas visíveis para editores
+const EDITOR_TABS = new Set(['cronograma', 'calendario', 'teleprompter', 'producao', 'ai', 'configuracoes'])
 const CONTENT_FORMATS = ['Reels', 'Roteiro de Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda', 'Ideia solta', 'Campanha', 'Outro']
 const CONTENT_STATUSES = ['Ideia', 'A produzir', 'Em produção', 'Roteiro pronto', 'Arte em criação', 'Aprovando', 'Aprovado', 'Postado', 'Pausado', 'Cancelado']
 const CONTENT_PRIORITIES = ['Baixa', 'Média', 'Alta', 'Urgente']
@@ -182,6 +184,8 @@ function App() {
   const login = (user) => {
     setCurrentUser(user)
     localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+    // Editores só têm acesso às abas restritas
+    if (user.role !== 'admin') setActive('cronograma')
   }
   const logout = () => {
     setCurrentUser(null)
@@ -274,7 +278,9 @@ function App() {
     return <LoginPage onLogin={login} />
   }
 
-  const activeLabel = nav.find((item) => item.id === active)?.label || 'DBE Flow'
+  const isAdmin = currentUser?.role === 'admin'
+  const visibleNav = isAdmin ? nav : nav.filter(item => EDITOR_TABS.has(item.id))
+  const activeLabel = visibleNav.find((item) => item.id === active)?.label || 'DBE Flow'
 
   return (
     <div className="app-shell">
@@ -288,7 +294,7 @@ function App() {
           </div>
         </div>
         <nav>
-          {nav.map((item) => (
+          {visibleNav.map((item) => (
             <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
               <item.icon size={18} />
               <span>{item.label}</span>
@@ -312,7 +318,7 @@ function App() {
             <strong>Menu</strong>
             <button style={{background:'transparent',border:0,color:'var(--muted)',cursor:'pointer'}} onClick={() => setDrawerOpen(false)}><X size={18} /></button>
           </div>
-          {nav.map((item) => (
+          {visibleNav.map((item) => (
             <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
               <item.icon size={16} />
               {item.label}
@@ -360,9 +366,9 @@ function App() {
         {active === 'configuracoes' && <Configuracoes currentUser={currentUser} onLogout={logout} theme={theme} setTheme={setTheme} />}
       </main>
 
-      {/* Mobile bottom nav — 4 botões principais */}
+      {/* Mobile bottom nav — 4 botões principais (filtrados por role) */}
       <nav className="mobile-bottom-nav">
-        {MOBILE_NAV.map((id) => {
+        {MOBILE_NAV.filter(id => isAdmin || EDITOR_TABS.has(id)).map((id) => {
           const item = nav.find((n) => n.id === id)
           if (!item) return null
           return (
@@ -385,9 +391,16 @@ function LoginPage({ onLogin }) {
 
   const submit = (e) => {
     e.preventDefault()
-    const user = USERS.find(u => u.email.toLowerCase() === email.toLowerCase())
-    if (!user || pass !== AUTH_PASS) { setError('E-mail ou senha incorretos'); return }
-    onLogin(user)
+    // Administradores fixos — usam a senha compartilhada
+    const adminUser = USERS.find(u => u.email.toLowerCase() === email.toLowerCase())
+    if (adminUser && pass === AUTH_PASS) { onLogin(adminUser); return }
+    // Editores criados em Configurações — usam senha individual
+    try {
+      const members = JSON.parse(localStorage.getItem('dbe-members') || '[]')
+      const editorUser = members.find(m => m.email.toLowerCase() === email.toLowerCase() && m.password === pass)
+      if (editorUser) { onLogin({ ...editorUser }); return }
+    } catch {}
+    setError('E-mail ou senha incorretos')
   }
 
   return (
@@ -433,6 +446,8 @@ function LoginPage({ onLogin }) {
 }
 
 function Dashboard({ state, metrics, setActive, finSummary }) {
+  const [statModal, setStatModal] = useState(null) // 'receita' | 'aberto' | 'receber' | 'pendencias'
+
   const scriptStages = [
     'Ideias', 'Gravados', 'Em edição', 'Editados', 'Revisão',
     'Aprovados', 'Falta agendamento', 'Agendados', 'Reprovados',
@@ -441,18 +456,83 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
     'Ideias aprovadas', 'Faltam fazer', 'Feitas', 'Aprovadas',
     'Falta agendamento', 'Agendados', 'Reprovadas',
   ]
+
   const rec = finSummary?.mrr ?? metrics.monthly
   const rcvbl = finSummary?.receivables ?? metrics.receivable
   const recLabel = finSummary ? `Receita realizada (${finSummary.month || 'mês atual'})` : 'Receita mensal estimada'
-  const rcvblLabel = finSummary ? 'Contas a receber (previsto)' : 'Contas a receber'
+  const rcvblLabel = finSummary ? 'A receber (planilha)' : 'A receber'
+
+  // Faturas em aberto do CRM (substituição do Pipeline)
+  const openInvoices = (state.invoices || []).filter(inv => inv.status !== 'Pago')
+  const paidInvoices = (state.invoices || []).filter(inv => inv.status === 'Pago')
+  const openTotal = openInvoices.reduce((s, inv) => s + Number(inv.value || 0), 0)
+
+  // Pendências de conteúdo (cronograma + posts)
+  const allContent = [...(state.cronograma || []), ...(state.posts || [])]
+  const pendingContent = allContent.filter(c => ['Revisão', 'Produção', 'Em produção', 'Arte em criação', 'Aprovando'].includes(c.status))
+
+  // Modal detalhes
+  const renderStatModal = () => {
+    if (!statModal) return null
+    let title = '', rows = []
+    if (statModal === 'receita') {
+      title = `Receitas recebidas`
+      rows = paidInvoices.length > 0
+        ? paidInvoices.map(inv => [inv.client, money(Number(inv.value || 0)), inv.due ? new Date(inv.due + 'T12:00:00').toLocaleDateString('pt-BR') : '—', inv.status])
+        : [[null, null, null, 'Nenhuma fatura paga registrada no CRM']]
+    } else if (statModal === 'aberto') {
+      title = 'Faturas em aberto'
+      rows = openInvoices.length > 0
+        ? openInvoices.map(inv => [inv.client, money(Number(inv.value || 0)), inv.due ? new Date(inv.due + 'T12:00:00').toLocaleDateString('pt-BR') : '—', inv.status])
+        : [[null, null, null, 'Nenhuma fatura pendente']]
+    } else if (statModal === 'receber') {
+      title = 'Contas a receber'
+      rows = openInvoices.length > 0
+        ? openInvoices.map(inv => [inv.client, money(Number(inv.value || 0)), inv.due ? new Date(inv.due + 'T12:00:00').toLocaleDateString('pt-BR') : '—', inv.status])
+        : [[null, null, null, 'Sem pendências']]
+    } else if (statModal === 'pendencias') {
+      title = 'Pendências de conteúdo'
+      rows = pendingContent.length > 0
+        ? pendingContent.map(c => [c.title || c.caption?.slice(0,40) || '—', c.client || '—', c.status, c.format || ''])
+        : [[null, null, null, 'Nenhuma pendência encontrada']]
+    }
+    return (
+      <div className="fin-modal-overlay" onClick={() => setStatModal(null)}>
+        <div className="fin-modal" onClick={e => e.stopPropagation()} style={{maxWidth:520}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+            <h3 style={{margin:0,fontSize:16}}>{title}</h3>
+            <button className="icon-btn" onClick={() => setStatModal(null)}><X size={16} /></button>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {rows.map((row, i) => (
+              row[0] === null
+                ? <p key={i} style={{color:'var(--muted)',fontSize:13,textAlign:'center',padding:'12px 0'}}>{row[3]}</p>
+                : (
+                  <div key={i} className="profile-info-row" style={{flexWrap:'wrap',gap:4}}>
+                    <strong style={{flex:2,minWidth:120}}>{row[0]}</strong>
+                    <span style={{flex:1,textAlign:'right',color:'var(--green)',fontWeight:600}}>{row[1]}</span>
+                    <span style={{flex:1,textAlign:'right',color:'var(--muted)',fontSize:12}}>{row[2]}</span>
+                    <span style={{flex:1,textAlign:'right'}}><span className="badge">{row[3]}</span></span>
+                  </div>
+                )
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Calendário — fonte de dados para o painel de Artes (cronograma + posts)
+  const calendarContent = [...(state.cronograma || []), ...(state.posts || [])]
 
   return (
     <section className="page-grid">
+      {renderStatModal()}
       <div className="grid-4">
-        <MiniStat label={recLabel} value={money(rec)} tone="success" />
-        <MiniStat label="Pipeline comercial" value={money(metrics.pipeline)} tone="gold" />
-        <MiniStat label={rcvblLabel} value={money(rcvbl)} tone="blue" />
-        <MiniStat label="Pendências de conteúdo" value={metrics.pendingApprovals} tone="danger" />
+        <MiniStat label={recLabel} value={money(rec)} tone="success" onClick={() => setStatModal('receita')} />
+        <MiniStat label="Faturas em aberto" value={money(openTotal)} tone="gold" onClick={() => setStatModal('aberto')} />
+        <MiniStat label={rcvblLabel} value={money(rcvbl)} tone="blue" onClick={() => setStatModal('receber')} />
+        <MiniStat label="Pendências de conteúdo" value={pendingContent.length} tone="danger" onClick={() => setStatModal('pendencias')} />
       </div>
 
       <div className="grid-2">
@@ -465,11 +545,11 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
       </div>
 
       <div className="grid-2">
-        <Panel title="Artes" action="Abrir Instagram" onAction={() => setActive('instagram')}>
-          <StatusFunnel stages={artStages} counts={countArtStages(state.posts)} />
+        <Panel title="Conteúdo do calendário" action="Abrir calendário" onAction={() => setActive('calendario')}>
+          <StatusFunnel stages={artStages} counts={countArtStages(calendarContent)} />
         </Panel>
-        <Panel title="Agenda de produção" action="Instagram" onAction={() => setActive('instagram')}>
-          <Timeline posts={state.posts} />
+        <Panel title="Agenda de produção" action="Calendário" onAction={() => setActive('calendario')}>
+          <Timeline posts={calendarContent} />
         </Panel>
       </div>
 
@@ -486,7 +566,7 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
             items={[
               ['Responder leads quentes', `${state.leads.filter((lead) => lead.temp === 'Quente').length} lead(s) com prioridade comercial`],
               ['Enviar posts para revisão', `${state.posts.filter((post) => post.status === 'Revisão').length} item(ns) aguardando cliente`],
-              ['Cobranças pendentes', `${state.invoices.filter((invoice) => invoice.status === 'A receber').length} fatura(s) a acompanhar`],
+              ['Cobranças pendentes', `${openInvoices.length} fatura(s) a acompanhar`],
             ]}
           />
         </Panel>
@@ -3823,8 +3903,19 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
   })
   const [newMemberEmail, setNewMemberEmail] = useState('')
   const [newMemberName, setNewMemberName] = useState('')
+  const [newMemberRole, setNewMemberRole] = useState('editor')
+  const [newMemberPass, setNewMemberPass] = useState('')
   const [memberMsg, setMemberMsg] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(currentUser?.avatar || '')
+  const avatarInputRef = useRef(null)
+
+  const handleAvatarFile = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setAvatarUrl(ev.target.result)
+    reader.readAsDataURL(file)
+  }
 
   const saveMembers = (m) => {
     setMembers(m)
@@ -3839,10 +3930,13 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
 
   const addMember = () => {
     if (!newMemberEmail || !newMemberName) { setMemberMsg('Preencha nome e e-mail'); return }
+    if (newMemberRole === 'editor' && !newMemberPass) { setMemberMsg('Defina uma senha para o editor'); return }
     const exists = members.find(m => m.email === newMemberEmail)
     if (exists) { setMemberMsg('Este e-mail já existe'); return }
-    saveMembers([...members, { email: newMemberEmail, name: newMemberName, role: 'member', avatar: null }])
-    setNewMemberEmail(''); setNewMemberName(''); setMemberMsg('✅ Membro adicionado')
+    const newEntry = { email: newMemberEmail, name: newMemberName, role: newMemberRole, avatar: null }
+    if (newMemberRole === 'editor') newEntry.password = newMemberPass
+    saveMembers([...members, newEntry])
+    setNewMemberEmail(''); setNewMemberName(''); setNewMemberPass(''); setMemberMsg('✅ Membro adicionado')
     setTimeout(() => setMemberMsg(''), 3000)
   }
 
@@ -3871,19 +3965,25 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
       {tab === 'perfil' && (
         <div className="grid-2 align-start">
           <Panel title="Informações do perfil">
-            <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:16, padding:'8px 0 16px'}}>
-              <div className="chat-avatar" style={{width:80, height:80, fontSize:28}}>
+            <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:10, padding:'8px 0 16px'}}>
+              <div
+                className="chat-avatar"
+                style={{width:80, height:80, fontSize:28, cursor:'pointer', position:'relative'}}
+                onClick={() => avatarInputRef.current?.click()}
+                title="Clique para trocar a foto"
+              >
                 {avatarUrl
                   ? <img src={avatarUrl} alt={name} style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%'}} />
                   : (name || currentUser?.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()
                 }
               </div>
-              <Input label="URL da foto de perfil" value={avatarUrl} onChange={setAvatarUrl} />
+              <p style={{fontSize:12, color:'var(--muted)', margin:0}}>Clique na foto para trocar</p>
+              <input ref={avatarInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={handleAvatarFile} />
             </div>
             <div className="form-grid">
               <Input label="Nome de exibição" value={name} onChange={setName} />
               <Input label="E-mail" value={currentUser?.email || ''} onChange={() => {}} />
-              <label className="field"><span>Papel</span><input readOnly value={currentUser?.role === 'admin' ? 'Administrador' : 'Membro'} /></label>
+              <label className="field"><span>Papel</span><input readOnly value={currentUser?.role === 'admin' ? 'Administrador' : 'Editor'} /></label>
             </div>
             <div className="button-row" style={{marginTop:12}}>
               <button className="primary" onClick={() => {
@@ -3946,7 +4046,7 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
                   </div>
                   <div style={{flex:1}}>
                     <strong style={{display:'block', fontSize:14}}>{m.name}</strong>
-                    <span style={{fontSize:12, color:'var(--muted)'}}>{m.email} · {m.role === 'admin' ? 'Admin' : 'Membro'}</span>
+                    <span style={{fontSize:12, color:'var(--muted)'}}>{m.email} · {m.role === 'admin' ? 'Admin' : 'Editor'}</span>
                   </div>
                   {m.email !== currentUser?.email && (
                     <button className="icon-btn" onClick={() => removeMember(m.email)} title="Remover">
@@ -3961,6 +4061,15 @@ function Configuracoes({ currentUser, onLogout, theme, setTheme }) {
             <div className="form-grid">
               <Input label="Nome" value={newMemberName} onChange={setNewMemberName} />
               <Input label="E-mail" type="email" value={newMemberEmail} onChange={setNewMemberEmail} />
+              <label className="field"><span>Papel</span>
+                <select value={newMemberRole} onChange={e => setNewMemberRole(e.target.value)}>
+                  <option value="admin">Administrador</option>
+                  <option value="editor">Editor</option>
+                </select>
+              </label>
+              {newMemberRole === 'editor' && (
+                <Input label="Senha de acesso" type="password" value={newMemberPass} onChange={setNewMemberPass} />
+              )}
             </div>
             {memberMsg && <p style={{fontSize:13, marginTop:8, color: memberMsg.startsWith('✅') ? 'var(--green)' : 'var(--red)'}}>{memberMsg}</p>}
             <button className="primary" style={{marginTop:12}} onClick={addMember}>
@@ -4133,9 +4242,14 @@ function Modal({ title, open, onClose, children, wide = false }) {
   )
 }
 
-function MiniStat({ label, value, tone = 'blue' }) {
+function MiniStat({ label, value, tone = 'blue', onClick }) {
   return (
-    <div className={`mini-stat ${tone}`}>
+    <div
+      className={`mini-stat ${tone}${onClick ? ' clickable' : ''}`}
+      onClick={onClick}
+      style={onClick ? {cursor:'pointer'} : undefined}
+      title={onClick ? 'Clique para ver detalhes' : undefined}
+    >
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

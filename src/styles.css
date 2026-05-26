@@ -383,6 +383,9 @@ h2 {
 .mini-stat.gold strong { color: var(--gold); }
 .mini-stat.danger strong { color: var(--red); }
 
+.mini-stat.clickable { transition: border-color 0.15s, background 0.15s; }
+.mini-stat.clickable:hover { border-color: var(--border-strong); background: var(--surface-3); }
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
