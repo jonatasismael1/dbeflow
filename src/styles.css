@@ -1766,6 +1766,7 @@ td small {
 }
 
 .modal-panel {
+  position: relative;
   width: min(760px, 96vw);
   max-height: 90vh;
   overflow: auto;
@@ -3967,8 +3968,101 @@ td small {
 .public-card pre, .public-script-list pre { white-space: pre-wrap; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.22); color: var(--text); padding: 16px; line-height: 1.6; }
 .public-script-list article { border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.03); padding: 16px; }
 
+.confirm-backdrop { z-index: 420; }
+.confirm-panel {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+.confirm-panel h2 { margin: 10px 0 6px; font-size: 18px; }
+.confirm-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
+.confirm-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(239,68,68,.14);
+  color: var(--red);
+}
+.primary.danger { background: var(--red); color: #fff; }
+.modal-inline-confirm {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgba(239,68,68,.32);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, #ef4444 6%);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  z-index: 3;
+}
+.modal-inline-confirm.static { position: static; margin-top: 12px; }
+.modal-inline-confirm strong { display: block; margin-bottom: 4px; }
+.modal-inline-confirm p { margin: 0; color: var(--muted); font-size: 13px; }
+.stage-task-panel,
+.entity-files-panel,
+.client-tab-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255,255,255,.03);
+  padding: 14px;
+}
+.stage-task-list { display: grid; gap: 10px; margin-top: 12px; }
+.stage-task-row {
+  display: grid;
+  grid-template-columns: minmax(120px, .8fr) minmax(180px, 1.3fr) minmax(130px, .8fr) minmax(150px, .9fr);
+  gap: 10px;
+  align-items: end;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.stage-task-row > strong { align-self: center; color: var(--text); }
+.kanban-stage { display: block; margin-top: 6px; color: var(--muted); }
+.entity-file-list { display: grid; gap: 8px; margin-top: 12px; }
+.entity-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 10px 12px;
+  text-decoration: none;
+}
+.entity-file-item small { display: block; color: var(--muted); margin-top: 2px; }
+.client-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin: 14px 0;
+}
+.client-tabs button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.client-tabs button.active { border-color: rgba(59,130,246,.5); color: var(--blue); background: rgba(59,130,246,.1); }
+
 @media (max-width: 720px) {
   .approval-link-box { grid-template-columns: 1fr; }
   .market-steps { grid-template-columns: repeat(3, 1fr); }
   .tone-grid { grid-template-columns: 1fr 1fr; }
+  .stage-task-row { grid-template-columns: 1fr; }
+  .modal-inline-confirm { position: static; margin: 12px 18px 18px; flex-direction: column; align-items: stretch; }
 }

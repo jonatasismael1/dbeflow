@@ -772,6 +772,8 @@ O que pode ser feito depois com IA, integrações e relatórios:
 
 ## 12. Lista de tarefas para implementação
 
+Atualização de execução: as migrations `0008`, `0009`, `0010` e `0011` foram validadas no Supabase real. A migration `0012_entity_files.sql` foi aplicada para anexos estruturados por entidade.
+
 - [ ] Migrar autenticação para Supabase Auth
   - Arquivos prováveis: `src/main.jsx`, `src/lib/supabase.js`, novas migrations de `profiles/workspaces/workspace_members`
   - Risco: Alto
@@ -802,37 +804,37 @@ O que pode ser feito depois com IA, integrações e relatórios:
   - Risco: Médio
   - Prioridade: Alta
 
-- [ ] Criar modal padrão de confirmação destrutiva
+- [x] Criar modal padrão de confirmação destrutiva
   - Arquivos prováveis: `src/main.jsx`, futura pasta `src/components`
   - Risco: Baixo
   - Prioridade: Alta
 
-- [ ] Adicionar proteção de fechamento com alterações não salvas
+- [x] Adicionar proteção de fechamento com alterações não salvas
   - Arquivos prováveis: componente `Modal`, modais de cliente/conteúdo/financeiro
   - Risco: Médio
   - Prioridade: Alta
 
-- [ ] Unificar entidade de conteúdo
+- [x] Unificar entidade de conteúdo
   - Arquivos prováveis: `src/main.jsx`, `src/lib/db.js`, migrations
   - Risco: Alto
   - Prioridade: Alta
 
-- [ ] Criar backlog de ideias
+- [x] Criar backlog de ideias
   - Arquivos prováveis: nova feature `ideas`, migrations, `CronogramaConteudo`, `DebyAI`
   - Risco: Médio
   - Prioridade: Alta
 
-- [ ] Criar fluxo "transformar ideia em roteiro/conteúdo"
+- [x] Criar fluxo "transformar ideia em roteiro/conteúdo"
   - Arquivos prováveis: `CronogramaConteudo`, nova entidade/serviço de conteúdo
   - Risco: Médio
   - Prioridade: Alta
 
-- [ ] Criar kanban de produção de conteúdo
+- [x] Criar kanban de produção de conteúdo
   - Arquivos prováveis: `CronogramaConteudo`, novos componentes board/status
   - Risco: Médio
   - Prioridade: Alta
 
-- [ ] Adicionar responsáveis e prazos por etapa
+- [x] Adicionar responsáveis e prazos por etapa
   - Arquivos prováveis: migrations de conteúdo/tarefas, modal de conteúdo
   - Risco: Médio
   - Prioridade: Alta
@@ -852,12 +854,12 @@ O que pode ser feito depois com IA, integrações e relatórios:
   - Risco: Alto
   - Prioridade: Alta
 
-- [ ] Estruturar arquivos/anexos por entidade
+- [x] Estruturar arquivos/anexos por entidade
   - Arquivos prováveis: migrations `files/assets`, Functions Drive/Storage, modal de conteúdo
   - Risco: Médio
   - Prioridade: Alta
 
-- [ ] Reestruturar dossiê do cliente em abas
+- [x] Reestruturar dossiê do cliente em abas
   - Arquivos prováveis: `Clientes`, novos componentes de cliente
   - Risco: Médio
   - Prioridade: Média

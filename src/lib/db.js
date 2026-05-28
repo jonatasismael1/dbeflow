@@ -208,6 +208,74 @@ export async function addContentComment({ entityType, entityId, body, author = n
   return data
 }
 
+export async function loadEntityFiles(entityType, entityId) {
+  if (!isSupabaseConfigured || !entityType || !entityId) return []
+  const { data, error } = await supabase
+    .from('dbe_entity_files')
+    .select('*')
+    .eq('entity_type', entityType)
+    .eq('entity_id', String(entityId))
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (error) {
+    console.warn('[db] loadEntityFiles', error.message)
+    return []
+  }
+  return data || []
+}
+
+export async function addEntityFile({ entityType, entityId, file, stage = '', source = 'manual', metadata = {}, author = null }) {
+  const now = new Date().toISOString()
+  const fallback = {
+    id: crypto.randomUUID(),
+    entity_type: entityType,
+    entity_id: String(entityId),
+    file_name: file?.name || file?.file_name || 'Arquivo',
+    file_url: file?.url || file?.file_url || '',
+    mime_type: file?.mimeType || file?.mime_type || '',
+    size_bytes: file?.size || file?.size_bytes || null,
+    drive_file_id: file?.id || file?.drive_file_id || null,
+    stage,
+    source,
+    metadata,
+    created_at: now,
+  }
+  if (!isSupabaseConfigured) return fallback
+  const authUser = await currentAuthUser()
+  const user = author || authUser
+  const row = {
+    entity_type: entityType,
+    entity_id: String(entityId),
+    file_name: fallback.file_name,
+    file_url: fallback.file_url,
+    mime_type: fallback.mime_type,
+    size_bytes: fallback.size_bytes,
+    drive_file_id: fallback.drive_file_id,
+    stage,
+    source,
+    metadata,
+    uploaded_by: authUser?.id || user?.id || null,
+    uploaded_by_email: user?.email || authUser?.email || null,
+  }
+  const { data, error } = await supabase
+    .from('dbe_entity_files')
+    .insert(row)
+    .select('*')
+    .single()
+  if (error) {
+    console.warn('[db] addEntityFile', error.message)
+    throw new Error(error.message || 'Falha ao salvar arquivo')
+  }
+  await addActivityLog({
+    entityType,
+    entityId,
+    action: 'file_upload',
+    metadata: { file_id: data.id, file_name: data.file_name, stage },
+    actor: author,
+  })
+  return data
+}
+
 export async function insertItem(key, item) {
   const clean = sanitizeForStorage(key, item)
   if (!isSupabaseConfigured) return { ...clean, id: clean.id || crypto.randomUUID() }

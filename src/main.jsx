@@ -80,7 +80,7 @@ import './styles.css'
 import logo from './assets/logo-dbe.png'
 import { importedClients, importedScripts } from './data/importedData.js'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
-import { loadAll, insertItem, saveItem, deleteItem, addActivityLog, loadActivityLogs, loadContentComments, addContentComment, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
+import { loadAll, insertItem, saveItem, deleteItem, addActivityLog, loadActivityLogs, loadContentComments, addContentComment, loadEntityFiles, addEntityFile, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
 import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v2' // v2 = dados reais importados do Notion
@@ -251,6 +251,31 @@ const EDITOR_TABS = new Set(['cronograma', 'calendario', 'teleprompter', 'produc
 const CONTENT_FORMATS = ['Reels', 'Roteiro de Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda', 'Ideia solta', 'Campanha', 'Outro']
 const CONTENT_STATUSES = ['Ideia', 'A produzir', 'Em produção', 'Roteiro pronto', 'Arte em criação', 'Aprovando', 'Aprovado', 'Postado', 'Pausado', 'Cancelado']
 const CONTENT_PRIORITIES = ['Baixa', 'Média', 'Alta', 'Urgente']
+const TEAM_MEMBERS = [
+  { name: 'Assessoria DBE', role: 'Admin/Gestor geral', email: 'assessoriadbe@gmail.com' },
+  { name: 'Jônatas Ismael', role: 'Criador de conteúdo', email: 'jonatas.ismael25@gmail.com' },
+  { name: 'Thayane Araújo', role: 'Criadora de conteúdo', email: 'thayaneluise@gmail.com' },
+  { name: 'Rafael Santos', role: 'Editor de vídeo', email: '' },
+  { name: 'Victor Tenório', role: 'Designer', email: '' },
+  { name: 'Victor Hugo', role: 'Designer', email: '' },
+  { name: 'DBE', role: 'Operação', email: '' },
+]
+const TEAM_MEMBER_OPTIONS = TEAM_MEMBERS.map((member) => ({ value: member.name, label: `${member.name} · ${member.role}` }))
+const CONTENT_STAGE_CONFIG = [
+  { key: 'idea', label: 'Ideia', defaultOwner: 'Jônatas Ismael' },
+  { key: 'script', label: 'Roteiro', defaultOwner: 'Jônatas Ismael' },
+  { key: 'recording', label: 'Gravação', defaultOwner: 'Thayane Araújo' },
+  { key: 'design', label: 'Design/capa', defaultOwner: 'Victor Tenório' },
+  { key: 'editing', label: 'Edição de vídeo', defaultOwner: 'Rafael Santos' },
+  { key: 'approval', label: 'Aprovação', defaultOwner: 'Assessoria DBE' },
+  { key: 'posting', label: 'Postagem', defaultOwner: 'Thayane Araújo' },
+]
+const STAGE_STATUS_OPTIONS = [
+  { value: 'pending', label: 'Pendente' },
+  { value: 'in_progress', label: 'Em andamento' },
+  { value: 'done', label: 'Concluído' },
+  { value: 'blocked', label: 'Bloqueado' },
+]
 
 const nav = [
   { id: 'dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
@@ -329,6 +354,8 @@ function App() {
   })
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
   const [finSummary, setFinSummary] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState(null)
+  const confirmResolverRef = useRef(null)
   const isPublicDiagnostic = new URLSearchParams(window.location.search).get('diagnostico') === 'publico'
   const publicApprovalMatch = window.location.pathname.match(/^\/aprovacao\/([^/]+)$/)
   const publicBatchApprovalMatch = window.location.pathname.match(/^\/aprovacao\/lote\/([^/]+)$/)
@@ -482,7 +509,7 @@ function App() {
   const metrics = useMemo(() => {
     const monthly = state.clients.reduce((sum, c) => sum + Number(c.monthly || 0), 0)
     const pipeline = state.leads.reduce((sum, l) => sum + Number(l.value || 0), 0)
-    const pendingApprovals = state.posts.filter((p) => ['Revisão', 'Produção'].includes(p.status)).length
+    const pendingApprovals = (state.scripts || []).filter((p) => ['Aprovando', 'Em produção'].includes(normalizeContentStatus(p.status))).length
     const receivable = state.invoices.filter((i) => i.status !== 'Pago').reduce((sum, i) => sum + Number(i.value || 0), 0)
     return { monthly, pipeline, pendingApprovals, receivable }
   }, [state])
@@ -506,6 +533,26 @@ function App() {
       throw err
     }
   }
+
+  const askConfirm = useCallback((options) => new Promise((resolve) => {
+    confirmResolverRef.current = resolve
+    setConfirmDialog({
+      title: 'Confirmar ação',
+      message: 'Esta ação não pode ser desfeita.',
+      confirmLabel: 'Confirmar',
+      cancelLabel: 'Cancelar',
+      tone: 'danger',
+      ...options,
+    })
+  }), [])
+
+  const resolveConfirm = (accepted) => {
+    const resolver = confirmResolverRef.current
+    confirmResolverRef.current = null
+    setConfirmDialog(null)
+    resolver?.(accepted)
+  }
+
   // Atualiza: aplica patch local + salva o registro completo no banco
   const updateItem = async (key, id, patch) => {
     let previous = null
@@ -542,7 +589,12 @@ function App() {
   // Remove: tira do estado + apaga no banco
   const removeItem = async (key, id) => {
     const label = ENTITY_LABELS[key] || 'registro'
-    if (!window.confirm(`Excluir este ${label.toLowerCase()}? Esta ação não pode ser desfeita.`)) return false
+    const confirmed = await askConfirm({
+      title: `Excluir ${label.toLowerCase()}`,
+      message: `Excluir este ${label.toLowerCase()}? Esta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+    })
+    if (!confirmed) return false
     let removed = null
     setState((cur) => {
       const rows = cur[key] || []
@@ -630,6 +682,12 @@ function App() {
   return (
     <div className="app-shell">
       <ToastViewport />
+      <ConfirmDialog
+        open={!!confirmDialog}
+        {...(confirmDialog || {})}
+        onCancel={() => resolveConfirm(false)}
+        onConfirm={() => resolveConfirm(true)}
+      />
       {/* Sidebar hover-expand — desktop */}
       <aside className="sidebar">
         <div className="brand">
@@ -867,8 +925,8 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
   const paidInvoices = (state.invoices || []).filter(inv => inv.status === 'Pago')
   const openTotal = openInvoices.reduce((s, inv) => s + Number(inv.value || 0), 0)
 
-  // Pendências de conteúdo (cronograma + posts)
-  const allContent = [...(state.cronograma || []), ...(state.posts || [])]
+  // Pendências de conteúdo (entidade canônica: scripts)
+  const allContent = (state.scripts || []).map((item) => normalizeContentItem(item, state.clients || []))
   const pendingContent = allContent.filter(c => ['Revisão', 'Produção', 'Em produção', 'Arte em criação', 'Aprovando'].includes(c.status))
 
   // Modal detalhes
@@ -922,8 +980,12 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
     )
   }
 
-  // Calendário — fonte de dados para o painel de Artes (cronograma + posts)
-  const calendarContent = [...(state.cronograma || []), ...(state.posts || [])]
+  // Calendário — fonte canônica para o painel de Artes
+  const calendarContent = allContent.map((item) => ({
+    ...item,
+    date: item.post_date || item.delivery_date || item.cover_date,
+    network: item.format,
+  }))
 
   return (
     <section className="page-grid">
@@ -940,7 +1002,7 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
           <Pipeline leads={state.leads} />
         </Panel>
         <Panel title="Roteiros" action="Abrir cronograma" onAction={() => setActive('cronograma')}>
-          <StatusFunnel stages={scriptStages} counts={countScriptStages(state.scripts, state.posts)} />
+          <StatusFunnel stages={scriptStages} counts={countScriptStages(state.scripts)} />
         </Panel>
       </div>
 
@@ -965,7 +1027,7 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
           <ActionList
             items={[
               ['Responder leads quentes', `${state.leads.filter((lead) => lead.temp === 'Quente').length} lead(s) com prioridade comercial`],
-              ['Enviar posts para revisão', `${state.posts.filter((post) => post.status === 'Revisão').length} item(ns) aguardando cliente`],
+              ['Enviar conteúdos para revisão', `${pendingContent.filter((post) => post.status === 'Aprovando' || post.status === 'Revisão').length} item(ns) aguardando cliente`],
               ['Cobranças pendentes', `${openInvoices.length} fatura(s) a acompanhar`],
             ]}
           />
@@ -979,6 +1041,7 @@ function Clientes({ state, addItem, updateItem, query }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(state.clients[0]?.id || '')
   const [form, setForm] = useState(() => emptyClientForm())
+  const [clientTab, setClientTab] = useState('visao')
   /*
     name: '',
     phone: '',
@@ -1006,6 +1069,10 @@ function Clientes({ state, addItem, updateItem, query }) {
   const selected = state.clients.find((client) => client.id === selectedId) || state.clients[0]
   const selectedDiagnostics = (state.diagnostics || []).filter((item) => item.name === selected?.name || item.phone === selected?.phone)
   const selectedInvoices = (state.invoices || []).filter((invoice) => invoice.client_id === selected?.id || invoice.client === selected?.name)
+  const selectedContent = (state.scripts || [])
+    .map((item) => normalizeContentItem(item, state.clients || []))
+    .filter((item) => selected && contentBelongsToClient(item, selected))
+  const selectedAttachments = selectedContent.flatMap((item) => normalizeAttachments(item.attachments || item.media_files).map((file) => ({ ...file, contentTitle: item.title })))
   const [clientDraft, setClientDraft] = useState(selected || {})
 
   useEffect(() => {
@@ -1112,8 +1179,30 @@ function Clientes({ state, addItem, updateItem, query }) {
                 <button className="secondary" onClick={() => copyText(JSON.stringify(selected, null, 2))}><Copy size={16} /> Copiar dados</button>
                 <button className="primary" onClick={() => updateItem('clients', selected.id, { status: selected.status === 'Ativo' ? 'Onboarding' : 'Ativo' })}><RefreshCw size={16} /> Alternar status</button>
               </div>
+              <div className="client-tabs" role="tablist" aria-label="Dossiê do cliente">
+                {[
+                  ['visao', 'Visão geral'],
+                  ['financeiro', 'Financeiro'],
+                  ['conteudos', 'Conteúdos'],
+                  ['arquivos', 'Arquivos'],
+                  ['contrato', 'Contrato'],
+                  ['historico', 'Histórico'],
+                ].map(([id, label]) => (
+                  <button key={id} className={clientTab === id ? 'active' : ''} onClick={() => setClientTab(id)}>{label}</button>
+                ))}
+              </div>
+              {clientTab === 'visao' && (
+                <div className="client-tab-panel">
+                  <ActionList compact items={[
+                    ['Segmento', selected.segment || 'Não informado'],
+                    ['Plano', selected.plan || 'Não informado'],
+                    ['Próxima ação', selected.next || 'Definir'],
+                    ['Conteúdos ativos', `${selectedContent.filter((item) => item.status !== 'Postado' && item.status !== 'Cancelado').length} item(ns)`],
+                  ]} />
+                </div>
+              )}
               <div className="client-sections">
-                <section>
+                {clientTab === 'financeiro' && <section>
                   <h3>Financeiro e cobrança</h3>
                   <div className="form-grid">
                     <Input label="Data de pagamento" type="date" value={clientDraft.payment_due || ''} onChange={(payment_due) => setClientDraft({ ...clientDraft, payment_due })} />
@@ -1136,9 +1225,9 @@ function Clientes({ state, addItem, updateItem, query }) {
                       ))}
                     </div>
                   ) : <div className="empty-box">Nenhuma cobrança vinculada ainda.</div>}
-                </section>
+                </section>}
 
-                <section>
+                {clientTab === 'contrato' && <section>
                   <h3>Contrato e informações internas</h3>
                   <div className="form-grid">
                     <Select label="Contrato" value={clientDraft.contract_status || 'Pendente'} onChange={(contract_status) => setClientDraft({ ...clientDraft, contract_status })} options={['Pendente', 'Contrato preenchido', 'Sem contrato - confiança', 'Importado/legado']} />
@@ -1173,16 +1262,52 @@ function Clientes({ state, addItem, updateItem, query }) {
                       <textarea className="textarea" value={clientDraft.personal_notes || ''} onChange={(event) => setClientDraft({ ...clientDraft, personal_notes: event.target.value })} />
                     </label>
                   </div>
-                </section>
+                </section>}
+                {clientTab === 'conteudos' && <section>
+                  <h3>Conteúdos vinculados</h3>
+                  {selectedContent.length ? (
+                    <div className="stack-list compact-stack">
+                      {selectedContent.map((item) => {
+                        const nextStage = getNextStageTask(item)
+                        return (
+                          <ListItem
+                            key={item.id}
+                            title={item.title}
+                            meta={`${item.format} · ${nextStage.label}: ${nextStage.owner || 'DBE'}${nextStage.due ? ` · ${date(nextStage.due)}` : ''}`}
+                            badge={item.status}
+                          />
+                        )
+                      })}
+                    </div>
+                  ) : <div className="empty-box">Nenhum conteúdo vinculado a este cliente ainda.</div>}
+                </section>}
+                {clientTab === 'arquivos' && <section>
+                  <h3>Arquivos vinculados</h3>
+                  {selectedAttachments.length ? (
+                    <div className="entity-file-list">
+                      {selectedAttachments.map((file) => (
+                        <a key={`${file.contentTitle}-${file.id || file.url || file.name}`} href={file.file_url || file.url || '#'} target="_blank" rel="noreferrer" className="entity-file-item">
+                          <Paperclip size={15} />
+                          <span>
+                            <strong>{file.file_name || file.name}</strong>
+                            <small>{file.contentTitle}</small>
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  ) : <div className="empty-box">Nenhum arquivo estruturado vinculado ainda.</div>}
+                </section>}
+                {clientTab === 'historico' && <section>
+                  <h3>Diagnósticos vinculados</h3>
+                  {selectedDiagnostics.length ? (
+                    <div className="stack-list">
+                      {selectedDiagnostics.map((item) => <ListItem key={item.id} title={`${item.specialty} · score ${item.score}`} meta={`${dateTime(item.createdAt)} · perda ${money(item.loss)}/mês`} badge="Diagnóstico" />)}
+                    </div>
+                  ) : (
+                    <div className="empty-box">Nenhum diagnóstico vinculado a este cliente ainda.</div>
+                  )}
+                </section>}
               </div>
-              <h3>Diagnósticos vinculados</h3>
-              {selectedDiagnostics.length ? (
-                <div className="stack-list">
-                  {selectedDiagnostics.map((item) => <ListItem key={item.id} title={`${item.specialty} · score ${item.score}`} meta={`${dateTime(item.createdAt)} · perda ${money(item.loss)}/mês`} badge="Diagnóstico" />)}
-                </div>
-              ) : (
-                <div className="empty-box">Nenhum diagnóstico vinculado a este cliente ainda.</div>
-              )}
             </div>
           ) : <div className="empty-box">Cadastre ou selecione um cliente.</div>}
         </Panel>
@@ -1797,8 +1922,12 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
   const [reviewLoading, setReviewLoading] = useState(false)
   const [contentComments, setContentComments] = useState([])
   const [activityLogs, setActivityLogs] = useState([])
+  const [entityFiles, setEntityFiles] = useState([])
   const [commentDraft, setCommentDraft] = useState('')
   const [commentsLoading, setCommentsLoading] = useState(false)
+  const [ideaTransform, setIdeaTransform] = useState(null)
+  const [transformForm, setTransformForm] = useState(null)
+  const [discardContentOpen, setDiscardContentOpen] = useState(false)
   const contentFileInputRef = useRef(null)
   const [sideItem, setSideItem] = useState(null)
   const [sideMinimized, setSideMinimized] = useState(false)
@@ -1820,7 +1949,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
     .filter((client) => filters.archived || !isArchivedClient(client))
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'))
   const allContent = state.scripts.map((item) => normalizeContentItem(item, state.clients))
-  const responsibleOptions = unique(['Todos', 'DBE', ...allContent.map((item) => item.responsible).filter(Boolean), ...state.clients.map((client) => client.owner).filter(Boolean)])
+  const responsibleOptions = unique(['Todos', ...TEAM_MEMBERS.map((member) => member.name), ...allContent.map((item) => item.responsible).filter(Boolean), ...state.clients.map((client) => client.owner).filter(Boolean)])
   const monthOptions = unique(['Todos', ...allContent.flatMap((item) => [item.delivery_date, item.post_date, item.cover_date]).filter(Boolean).map((value) => value.slice(0, 7))])
   const filteredContent = allContent.filter((item) => contentMatchesFilters(item, filters, state.clients))
   const groups = visibleClients.map((client) => ({
@@ -1846,6 +1975,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
     setReviewFeedback('')
     setContentComments([])
     setActivityLogs([])
+    setEntityFiles([])
     setCommentDraft('')
     setModalOpen(true)
   }
@@ -1854,16 +1984,19 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
     if (!itemId) {
       setContentComments([])
       setActivityLogs([])
+      setEntityFiles([])
       return
     }
     setCommentsLoading(true)
     try {
-      const [comments, logs] = await Promise.all([
+      const [comments, logs, files] = await Promise.all([
         loadContentComments('scripts', itemId),
         loadActivityLogs('scripts', itemId),
+        loadEntityFiles('scripts', itemId),
       ])
       setContentComments(comments)
       setActivityLogs(logs)
+      setEntityFiles(files)
     } finally {
       setCommentsLoading(false)
     }
@@ -1880,6 +2013,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
     setReviewNote('')
     setReviewFeedback('')
     setCommentDraft('')
+    setEntityFiles(normalizeAttachments(nextForm.attachments || nextForm.media_files))
     refreshContentHistory(item.id)
     setModalOpen(true)
   }
@@ -1896,6 +2030,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
     setReviewFeedback('')
     setContentComments([])
     setActivityLogs([])
+    setEntityFiles([])
     setCommentDraft('')
     setModalOpen(true)
   }
@@ -1919,13 +2054,71 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
     }
   }
 
-  const closeContentModal = () => setModalOpen(false)
+  const closeContentModal = () => {
+    setDiscardContentOpen(false)
+    setModalOpen(false)
+  }
   const contentFormDirty = modalOpen && stableStringify(form) !== formBaseline
 
+  const updateStageTask = (stageKey, patch) => {
+    setForm((current) => ({
+      ...current,
+      stage_tasks: {
+        ...normalizeStageTasks(current.stage_tasks, current),
+        [stageKey]: {
+          ...normalizeStageTasks(current.stage_tasks, current)[stageKey],
+          ...patch,
+        },
+      },
+    }))
+  }
+
   const promoteIdea = (item) => {
+    const normalized = normalizeContentItem(item, state.clients)
+    const nextTasks = normalizeStageTasks(normalized.stage_tasks, normalized)
+    nextTasks.idea = { ...nextTasks.idea, status: 'done' }
+    nextTasks.script = { ...nextTasks.script, status: 'in_progress' }
+    setIdeaTransform(normalized)
+    setTransformForm({
+      title: normalized.title,
+      format: normalized.format === 'Ideia solta' ? 'Roteiro de Reels' : normalized.format,
+      responsible: normalized.responsible || 'Jônatas Ismael',
+      delivery_date: normalized.delivery_date || '',
+      post_date: normalized.post_date || '',
+      stage_tasks: nextTasks,
+    })
+  }
+
+  const updateTransformStageTask = (stageKey, patch) => {
+    setTransformForm((current) => ({
+      ...current,
+      stage_tasks: {
+        ...normalizeStageTasks(current?.stage_tasks, current || {}),
+        [stageKey]: {
+          ...normalizeStageTasks(current?.stage_tasks, current || {})[stageKey],
+          ...patch,
+        },
+      },
+    }))
+  }
+
+  const saveIdeaTransform = async () => {
+    if (!ideaTransform?.id || !transformForm?.title) return
     const now = new Date().toISOString()
-    updateItem('scripts', item.id, { ...item, status: 'A produzir', updatedAt: now })
-    setSideItem({ ...item, status: 'A produzir', updatedAt: now })
+    const patch = {
+      ...ideaTransform,
+      ...transformForm,
+      content_type: 'content',
+      status: 'A produzir',
+      source: 'ideias',
+      idea_origin_id: ideaTransform.idea_origin_id || ideaTransform.id,
+      updatedAt: now,
+    }
+    await updateItem('scripts', ideaTransform.id, patch)
+    setSideItem(patch)
+    setIdeaTransform(null)
+    setTransformForm(null)
+    notify('Ideia transformada em conteúdo com etapas definidas.', 'success')
   }
 
   const saveContent = async () => {
@@ -1938,6 +2131,8 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
       client_id: client?.id || form.client_id || '',
       client: client?.name || form.client || '',
       source: form.source || (editing ? editing.source : 'cronograma'),
+      stage_tasks: normalizeStageTasks(form.stage_tasks, form),
+      attachments: normalizeAttachments(form.attachments),
       updatedAt: now,
     }
     let saved = editing?.id ? { ...payload, id: editing.id } : null
@@ -2015,22 +2210,41 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
         })
         if (!uploadRes.ok) throw new Error(`Google Drive HTTP ${uploadRes.status}`)
         const driveFile = await uploadRes.json()
-        uploaded.push({
+        const driveRecord = {
           id: driveFile.id,
           name: file.name,
           mimeType: file.type,
           size: file.size,
           url: `https://drive.google.com/file/d/${driveFile.id}/view`,
           uploadedAt: new Date().toISOString(),
+          stage: getNextStageTask(form).key,
+          source: 'drive',
+        }
+        const entityFile = await addEntityFile({
+          entityType: 'scripts',
+          entityId: editing.id,
+          file: driveRecord,
+          stage: driveRecord.stage,
+          source: 'drive',
+          metadata: { folderId, contentTitle: form.title },
+          author: currentUser,
+        })
+        uploaded.push({
+          ...driveRecord,
+          id: entityFile?.id || driveRecord.id,
+          drive_file_id: driveFile.id,
+          file_url: driveRecord.url,
+          file_name: driveRecord.name,
         })
       } catch (err) {
         setDriveFeedback(`Erro ao enviar ${file.name}: ${err.message}`)
       }
     }
     if (uploaded.length) {
-      const nextFiles = [...normalizeMediaFiles(form.media_files), ...uploaded]
-      const patch = { ...form, media_files: nextFiles, status: form.status === 'Ideia' ? 'A produzir' : form.status, updatedAt: new Date().toISOString() }
+      const nextFiles = [...normalizeAttachments(form.attachments || form.media_files), ...uploaded]
+      const patch = { ...form, attachments: nextFiles, media_files: '', status: form.status === 'Ideia' ? 'A produzir' : form.status, updatedAt: new Date().toISOString() }
       setForm(patch)
+      setEntityFiles((current) => [...uploaded, ...current])
       updateItem('scripts', editing.id, patch)
       setDriveFeedback(`${uploaded.length} arquivo(s) enviado(s) para a pasta do roteiro.`)
     }
@@ -2107,6 +2321,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
 
   const selectedEditedVideo = editedVideos.find((item) => item.id === selectedEditedVideoId) || editedVideos[0]
   const selectedReview = selectedEditedVideo ? getVideoReview(form, selectedEditedVideo.id) : null
+  const formFiles = entityFiles.length ? entityFiles : normalizeAttachments(form.attachments || form.media_files)
 
   return (
     <section className="page-grid">
@@ -2191,6 +2406,10 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
                       <Badge text={item.format} tone={formatTone(item.format)} />
                       <small>{date(item.post_date) || date(item.delivery_date) || '-'}</small>
                     </div>
+                    {(() => {
+                      const nextStage = getNextStageTask(item)
+                      return <small className="kanban-stage">{nextStage.label}: {nextStage.owner || 'DBE'}{nextStage.due ? ` · ${date(nextStage.due)}` : ''}</small>
+                    })()}
                   </button>
                 )) : <div className="kanban-empty">Sem itens</div>}
               </div>
@@ -2237,7 +2456,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
                           <Badge text={item.status} tone={statusTone(item.status)} />
                           <span>{item.responsible || '-'}</span>
                           <span>{date(item.post_date) || date(item.delivery_date) || '-'}</span>
-                          <span className="attachment-cell">{item.media_files ? <Paperclip size={15} /> : null}</span>
+                          <span className="attachment-cell">{normalizeAttachments(item.attachments || item.media_files).length ? <Paperclip size={15} /> : null}</span>
                         </button>
                       ))
                     ) : (
@@ -2315,7 +2534,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
             <Input label="Título do conteúdo" value={form.title || ''} onChange={(title) => setForm({ ...form, title })} />
             <Select label="Formato" value={form.format || 'Roteiro de Reels'} onChange={(format) => setForm({ ...form, format })} options={CONTENT_FORMATS} />
             <Select label="Status" value={form.status || 'Ideia'} onChange={(status) => setForm({ ...form, status })} options={CONTENT_STATUSES} />
-            <Input label="Responsável" value={form.responsible || ''} onChange={(responsible) => setForm({ ...form, responsible })} />
+            <Select label="Responsável" value={form.responsible || 'Jônatas Ismael'} onChange={(responsible) => setForm({ ...form, responsible })} options={TEAM_MEMBER_OPTIONS} />
             <Select label="Prioridade" value={form.priority || 'Média'} onChange={(priority) => setForm({ ...form, priority })} options={CONTENT_PRIORITIES} />
             <Input label="Data de entrega" type="date" value={form.delivery_date || ''} onChange={(delivery_date) => setForm({ ...form, delivery_date })} />
             <Input label="Data de postagem" type="date" value={form.post_date || ''} onChange={(post_date) => setForm({ ...form, post_date })} />
@@ -2325,10 +2544,53 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
               <span>Legenda</span>
               <textarea className="textarea" value={form.caption || ''} onChange={(event) => setForm({ ...form, caption: event.target.value })} />
             </label>
-            <label className="field span">
-              <span>Arquivos e mídia</span>
-              <textarea className="textarea" value={mediaFilesToText(form.media_files)} onChange={(event) => setForm({ ...form, media_files: event.target.value })} placeholder="Cole links do Drive, referências ou nomes de arquivos." />
-            </label>
+            <div className="stage-task-panel span">
+              <div className="review-head">
+                <div>
+                  <strong>Etapas, responsáveis e prazos</strong>
+                  <span>Controle operacional por fase do conteúdo.</span>
+                </div>
+              </div>
+              <div className="stage-task-list">
+                {CONTENT_STAGE_CONFIG.map((stage) => {
+                  const task = normalizeStageTasks(form.stage_tasks, form)[stage.key]
+                  return (
+                    <div className="stage-task-row" key={stage.key}>
+                      <strong>{stage.label}</strong>
+                      <Select label="Responsável" value={task.owner || stage.defaultOwner} onChange={(owner) => updateStageTask(stage.key, { owner })} options={TEAM_MEMBER_OPTIONS} />
+                      <Input label="Prazo" type="date" value={task.due || ''} onChange={(due) => updateStageTask(stage.key, { due })} />
+                      <Select label="Status" value={task.status || 'pending'} onChange={(status) => updateStageTask(stage.key, { status })} options={STAGE_STATUS_OPTIONS} />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="entity-files-panel span">
+              <div className="review-head">
+                <div>
+                  <strong>Arquivos e anexos</strong>
+                  <span>Anexos vinculados a este conteúdo, com etapa e origem.</span>
+                </div>
+                {editing?.id && (
+                  <button className="secondary" onClick={() => contentFileInputRef.current?.click()}><UploadCloud size={14} /> Adicionar arquivos</button>
+                )}
+              </div>
+              {formFiles.length ? (
+                <div className="entity-file-list">
+                  {formFiles.map((file) => (
+                    <a key={file.id || file.file_url || file.url || file.name} href={file.file_url || file.url || '#'} target="_blank" rel="noreferrer" className="entity-file-item">
+                      <Paperclip size={15} />
+                      <span>
+                        <strong>{file.file_name || file.name}</strong>
+                        <small>{file.stage ? `${CONTENT_STAGE_CONFIG.find((stage) => stage.key === file.stage)?.label || file.stage} · ` : ''}{file.source || 'manual'}</small>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-box compact-empty">{editing?.id ? 'Nenhum anexo vinculado ainda.' : 'Salve o conteúdo antes de anexar arquivos.'}</div>
+              )}
+            </div>
             {form.format === 'Roteiro de Reels' && (
               <>
                 <div className="drive-content-tools span">
@@ -2474,10 +2736,60 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
             ['Origem', form.source || 'cronograma'],
           ]} />
           <div className="button-row">
-            <button className="secondary" onClick={() => { if (!contentFormDirty || window.confirm('Existem alterações não salvas. Deseja fechar mesmo assim?')) closeContentModal() }}>Cancelar</button>
+            <button className="secondary" onClick={() => contentFormDirty ? setDiscardContentOpen(true) : closeContentModal()}>Cancelar</button>
             <button className="primary" onClick={saveContent}><Check size={16} /> Salvar conteúdo</button>
           </div>
+          {discardContentOpen && (
+            <div className="modal-inline-confirm static">
+              <div>
+                <strong>Descartar alterações?</strong>
+                <p>Existem alterações não salvas. Deseja fechar mesmo assim?</p>
+              </div>
+              <div className="button-row compact no-margin">
+                <button className="secondary" onClick={() => setDiscardContentOpen(false)}>Continuar editando</button>
+                <button className="primary danger" onClick={closeContentModal}>Descartar alterações</button>
+              </div>
+            </div>
+          )}
         </div>
+      </Modal>
+      <Modal title="Transformar ideia em conteúdo" open={!!ideaTransform} onClose={() => { setIdeaTransform(null); setTransformForm(null) }} wide>
+        {transformForm && (
+          <div className="content-modal">
+            <div className="form-grid">
+              <Input label="Título" value={transformForm.title || ''} onChange={(title) => setTransformForm({ ...transformForm, title })} />
+              <Select label="Formato" value={transformForm.format || 'Roteiro de Reels'} onChange={(format) => setTransformForm({ ...transformForm, format })} options={CONTENT_FORMATS.filter((format) => format !== 'Ideia solta')} />
+              <Select label="Responsável principal" value={transformForm.responsible || 'Jônatas Ismael'} onChange={(responsible) => setTransformForm({ ...transformForm, responsible })} options={TEAM_MEMBER_OPTIONS} />
+              <Input label="Entrega" type="date" value={transformForm.delivery_date || ''} onChange={(delivery_date) => setTransformForm({ ...transformForm, delivery_date })} />
+              <Input label="Postagem" type="date" value={transformForm.post_date || ''} onChange={(post_date) => setTransformForm({ ...transformForm, post_date })} />
+              <div className="stage-task-panel span">
+                <div className="review-head">
+                  <div>
+                    <strong>Fluxo de produção</strong>
+                    <span>A ideia entra no kanban como conteúdo a produzir.</span>
+                  </div>
+                </div>
+                <div className="stage-task-list">
+                  {CONTENT_STAGE_CONFIG.map((stage) => {
+                    const task = normalizeStageTasks(transformForm.stage_tasks, transformForm)[stage.key]
+                    return (
+                      <div className="stage-task-row" key={stage.key}>
+                        <strong>{stage.label}</strong>
+                        <Select label="Responsável" value={task.owner || stage.defaultOwner} onChange={(owner) => updateTransformStageTask(stage.key, { owner })} options={TEAM_MEMBER_OPTIONS} />
+                        <Input label="Prazo" type="date" value={task.due || ''} onChange={(due) => updateTransformStageTask(stage.key, { due })} />
+                        <Select label="Status" value={task.status || 'pending'} onChange={(status) => updateTransformStageTask(stage.key, { status })} options={STAGE_STATUS_OPTIONS} />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="button-row">
+              <button className="secondary" onClick={() => { setIdeaTransform(null); setTransformForm(null) }}>Cancelar</button>
+              <button className="primary" onClick={saveIdeaTransform}><Check size={16} /> Transformar</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </section>
   )
@@ -2509,49 +2821,31 @@ function Calendario({ state, updateItem }) {
   const nextMonth = () => setCurrentMonth(({ year: y, month: m }) => m === 11 ? { year: y + 1, month: 0 } : { year: y, month: m + 1 })
 
   const allClients = [...new Set([...(state.clients || []).map(c => c.name), ...(state.leads || []).map(l => l.name)])]
-  const allMembers = ['DBE', 'Thayane', 'Jonatas', 'Editor']
-  const allFormats = ['Reels', 'Post estático', 'Carrossel', 'Stories', 'Legenda']
-  const allStatuses = ['Ideia', 'A produzir', 'Em produção', 'Aprovado', 'Postado']
+  const allMembers = TEAM_MEMBERS.map((member) => member.name)
+  const allFormats = CONTENT_FORMATS
+  const allStatuses = CONTENT_STATUSES
 
   const getEvents = () => {
     const events = []
-    const scripts = state.scripts || []
-    const posts = state.posts || []
+    const contents = (state.scripts || []).map((item) => normalizeContentItem(item, state.clients || []))
 
     if (viewMode === 'edicao') {
-      scripts.forEach((s) => {
-        const d = s.edit_date || s.due_date || s.delivery_date
-        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.editor || s.owner || 'DBE', type: 'edicao', status: s.status, client: s.client, format: s.format, member: s.editor || s.owner })
-      })
-      ;(state.cronograma || []).forEach((c) => {
-        const d = c.edit_date || c.due
-        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.editor || c.owner || 'DBE', type: 'edicao', status: c.status, client: c.client, format: c.format, member: c.editor || c.owner })
+      contents.forEach((s) => {
+        const stage = normalizeStageTasks(s.stage_tasks, s).editing
+        const d = stage?.due || s.edit_date || s.due_date || s.delivery_date
+        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Conteúdo', sub: stage?.owner || s.responsible || 'DBE', type: 'edicao', status: s.status, client: s.client, format: s.format, member: stage?.owner || s.responsible })
       })
     } else if (viewMode === 'capa') {
-      scripts.forEach((s) => {
-        const d = s.cover_date
-        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.client || '', type: 'capa', status: s.status, client: s.client, format: s.format, member: s.responsible || s.owner })
-      })
-      posts.forEach((p) => {
-        const d = p.cover_date || p.date
-        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 28) + '...' : 'Post', sub: p.client || p.network || '', type: 'capa', status: p.status, client: p.client, format: p.network })
-      })
-      ;(state.cronograma || []).forEach((c) => {
-        const d = c.cover_date || c.date
-        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Capa', sub: c.client || '', type: 'capa', status: c.status, client: c.client, format: c.format })
+      contents.forEach((s) => {
+        const stage = normalizeStageTasks(s.stage_tasks, s).design
+        const d = s.cover_date || stage?.due
+        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Conteúdo', sub: stage?.owner || s.client || '', type: 'capa', status: s.status, client: s.client, format: s.format, member: stage?.owner || s.responsible })
       })
     } else {
-      scripts.forEach((s) => {
-        const d = s.post_date
-        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Roteiro', sub: s.client || '', type: 'postagem', status: s.status, client: s.client, format: s.format, member: s.responsible || s.owner })
-      })
-      posts.forEach((p) => {
-        const d = p.date || p.scheduled_date
-        if (d) events.push({ date: d.slice(0, 10), label: p.caption ? p.caption.slice(0, 28) + '...' : 'Post', sub: p.client || p.network || '', type: 'postagem', status: p.status, client: p.client, format: p.network })
-      })
-      ;(state.cronograma || []).forEach((c) => {
-        const d = c.post_date || c.date
-        if (d) events.push({ date: d.slice(0, 10), label: c.title || c.format || 'Conteúdo', sub: c.client || '', type: 'postagem', status: c.status, client: c.client, format: c.format })
+      contents.forEach((s) => {
+        const stage = normalizeStageTasks(s.stage_tasks, s).posting
+        const d = s.post_date || stage?.due
+        if (d) events.push({ id: s.id, date: d.slice(0, 10), label: s.title || 'Conteúdo', sub: s.client || '', type: 'postagem', status: s.status, client: s.client, format: s.format, member: stage?.owner || s.responsible })
       })
     }
     return events
@@ -2607,17 +2901,12 @@ function Calendario({ state, updateItem }) {
   // Encontra o post/script original pelo evento
   const findSource = (ev) => {
     if (!ev) return null
-    const posts = state.posts || []
     const scripts = state.scripts || []
-    const cronograma = state.cronograma || []
     if (ev.id) {
-      const byId = scripts.find(s => s.id === ev.id) || posts.find(p => p.id === ev.id)
+      const byId = scripts.find(s => s.id === ev.id)
       if (byId) return byId
     }
-    return posts.find(p => {
-      const d = p.date || p.cover_date || p.scheduled_date
-      return d && d.slice(0,10) === ev.date && (p.caption?.includes(ev.label.slice(0,20)) || p.client === ev.client)
-    }) || scripts.find(s => s.title === ev.label && s.client === ev.client) || cronograma.find(c => (c.title || c.format) === ev.label) || ev
+    return scripts.find(s => (s.title || s.caption) === ev.label && s.client === ev.client) || ev
   }
 
   const dayEventsForPanel = selectedDay ? allEvents.filter(e => e.date === selectedDay) : []
@@ -2717,8 +3006,7 @@ function Calendario({ state, updateItem }) {
       {selectedEvent && (() => {
         const src = findSource(selectedEvent)
         const isScript = src && (state.scripts || []).some(s => s.id === src.id)
-        const isPost   = src && (state.posts   || []).some(p => p.id === src.id)
-        const tableKey = isScript ? 'scripts' : isPost ? 'posts' : null
+        const tableKey = isScript ? 'scripts' : null
         const currentStatus = src?.status || selectedEvent.status || 'Ideia'
 
         const changeStatus = (newStatus) => {
@@ -4118,40 +4406,41 @@ function DebyAI({ state, addItem, updateItem }) {
 }
 
 function InstagramStudio({ state, addItem, updateItem }) {
-  const [form, setForm] = useState({ client: state.clients[0]?.name || '', network: 'Instagram', date: '2026-05-27T10:00', status: 'Faltam fazer', caption: '' })
-  const postStatuses = ['Ideia aprovada', 'Faltam fazer', 'Feita', 'Aprovada', 'Falta agendamento', 'Agendado', 'Reprovada', 'Publicado']
+  const [form, setForm] = useState({ client: state.clients[0]?.name || '', format: 'Post estático', post_date: '2026-05-27', status: 'Ideia', caption: '' })
+  const postStatuses = CONTENT_STATUSES
+  const contentItems = (state.scripts || []).map((item) => normalizeContentItem(item, state.clients || []))
   return (
     <section className="page-grid">
       <div className="grid-4">
-        <MiniStat label="Posts" value={state.posts.length} />
-        <MiniStat label="Em revisão" value={state.posts.filter((p) => p.status === 'Revisão').length} tone="gold" />
-        <MiniStat label="Agendados" value={state.posts.filter((p) => p.status === 'Agendado').length} tone="success" />
-        <MiniStat label="Publicados" value={state.posts.filter((p) => p.status === 'Publicado').length} tone="blue" />
+        <MiniStat label="Conteúdos" value={contentItems.length} />
+        <MiniStat label="Em aprovação" value={contentItems.filter((p) => p.status === 'Aprovando').length} tone="gold" />
+        <MiniStat label="Agendados" value={contentItems.filter((p) => p.status === 'Aprovado').length} tone="success" />
+        <MiniStat label="Publicados" value={contentItems.filter((p) => p.status === 'Postado').length} tone="blue" />
       </div>
-      <Panel title="Novo post">
+      <Panel title="Novo conteúdo">
         <div className="form-grid">
           <Select label="Cliente" value={form.client} onChange={(client) => setForm({ ...form, client })} options={state.clients.map((c) => c.name)} />
-          <Select label="Rede" value={form.network} onChange={(network) => setForm({ ...form, network })} options={['Instagram', 'Reels', 'Stories', 'LinkedIn']} />
-          <Input label="Data" type="datetime-local" value={form.date} onChange={(date) => setForm({ ...form, date })} />
+          <Select label="Formato" value={form.format} onChange={(format) => setForm({ ...form, format })} options={CONTENT_FORMATS} />
+          <Input label="Data" type="date" value={form.post_date} onChange={(post_date) => setForm({ ...form, post_date })} />
           <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={postStatuses} />
           <Input label="Legenda" value={form.caption} onChange={(caption) => setForm({ ...form, caption })} />
           <button className="secondary" onClick={() => setForm({ ...form, caption: generateCaption(form.client) })}><Wand2 size={16} /> Gerar legenda</button>
-          <button className="primary span" onClick={() => form.caption && addItem('posts', form)}><CalendarDays size={16} /> Agendar</button>
+          <button className="primary span" onClick={() => form.caption && addItem('scripts', { ...form, title: form.caption.slice(0, 70), source: 'instagram', createdAt: new Date().toISOString() })}><CalendarDays size={16} /> Agendar</button>
         </div>
       </Panel>
       <Panel title="Esteira de conteúdo">
         <div className="kanban">
           {postStatuses.map((status) => (
             <div className="kanban-col" key={status}>
-              <div className="kanban-title"><span>{status}</span><strong>{state.posts.filter((post) => post.status === status).length}</strong></div>
-              {state.posts.filter((post) => post.status === status).map((post) => (
+              <div className="kanban-title"><span>{status}</span><strong>{contentItems.filter((post) => post.status === status).length}</strong></div>
+              {contentItems.filter((post) => post.status === status).map((post) => (
                 <article className="kanban-card" key={post.id}>
-                  <Badge text={post.network} tone="blue" />
+                  <Badge text={post.format} tone="blue" />
                   <h3>{post.client}</h3>
                   <p>{post.caption}</p>
-                  <small>{dateTime(post.date)}</small>
+                  <small>{date(post.post_date)}</small>
                   <div className="button-row compact">
-                    <button className="secondary" onClick={() => updateItem('posts', post.id, { status: nextFrom(postStatuses, post.status) })}><Check size={14} /> Avançar</button>
+                    <button className="secondary" onClick={() => updateItem('scripts', post.id, { status: nextFrom(postStatuses, post.status) })}><Check size={14} /> Avançar</button>
                     <button className="ghost" onClick={() => copyText(approvalMessage(post))}><Copy size={14} /></button>
                   </div>
                 </article>
@@ -4161,7 +4450,7 @@ function InstagramStudio({ state, addItem, updateItem }) {
         </div>
       </Panel>
       <Panel title="Calendário editorial">
-        <Timeline posts={state.posts} />
+        <Timeline posts={contentItems.map((item) => ({ ...item, date: item.post_date, network: item.format }))} />
       </Panel>
     </section>
   )
@@ -6355,9 +6644,16 @@ function Panel({ title, action, onAction, children }) {
 }
 
 function Modal({ title, open, onClose, children, wide = false, confirmOnClose = false, confirmMessage = 'Existem alterações não salvas. Deseja fechar mesmo assim?' }) {
+  const [confirmClose, setConfirmClose] = useState(false)
+  useEffect(() => {
+    if (!open) setConfirmClose(false)
+  }, [open])
   if (!open) return null
   const requestClose = () => {
-    if (confirmOnClose && !window.confirm(confirmMessage)) return
+    if (confirmOnClose) {
+      setConfirmClose(true)
+      return
+    }
     onClose()
   }
   return (
@@ -6368,6 +6664,35 @@ function Modal({ title, open, onClose, children, wide = false, confirmOnClose = 
           <button className="icon-btn" onClick={requestClose}>×</button>
         </div>
         {children}
+        {confirmClose && (
+          <div className="modal-inline-confirm" role="alertdialog" aria-modal="true">
+            <div>
+              <strong>Descartar alterações?</strong>
+              <p>{confirmMessage}</p>
+            </div>
+            <div className="button-row compact no-margin">
+              <button className="secondary" onClick={() => setConfirmClose(false)}>Continuar editando</button>
+              <button className="primary danger" onClick={onClose}>Descartar alterações</button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function ConfirmDialog({ open, title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', tone = 'danger', onConfirm, onCancel }) {
+  if (!open) return null
+  return (
+    <div className="modal-backdrop confirm-backdrop" role="presentation">
+      <section className="confirm-panel" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div className="confirm-icon"><AlertCircle size={22} /></div>
+        <h2 id="confirm-title">{title}</h2>
+        <p>{message}</p>
+        <div className="button-row">
+          <button className="secondary" onClick={onCancel}>{cancelLabel}</button>
+          <button className={tone === 'danger' ? 'primary danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
       </section>
     </div>
   )
@@ -6495,46 +6820,104 @@ function money(value) {
 
 function emptyContentForm(clients = [], client) {
   const selected = client || clients[0]
+  const responsible = selected?.owner || 'Jônatas Ismael'
   return {
     client_id: selected?.id || '',
     client: selected?.name || '',
+    content_type: 'content',
     title: '',
     format: 'Roteiro de Reels',
     status: 'Ideia',
-    responsible: selected?.owner || 'DBE',
+    responsible,
     delivery_date: '',
     post_date: '',
     cover_date: '',
     reference_url: '',
     caption: '',
     priority: 'Média',
+    attachments: [],
     media_files: '',
+    stage_tasks: buildDefaultStageTasks(responsible),
     notes: '',
     source: 'cronograma',
+    idea_origin_id: '',
+    campaign_id: '',
     createdAt: '',
     updatedAt: '',
   }
 }
 
+function buildDefaultStageTasks(primaryOwner = 'Jônatas Ismael') {
+  return CONTENT_STAGE_CONFIG.reduce((acc, stage) => ({
+    ...acc,
+    [stage.key]: {
+      owner: stage.key === 'idea' || stage.key === 'script' ? primaryOwner || stage.defaultOwner : stage.defaultOwner,
+      due: '',
+      status: 'pending',
+    },
+  }), {})
+}
+
+function normalizeStageTasks(tasks = {}, item = {}) {
+  const base = buildDefaultStageTasks(item.responsible || 'Jônatas Ismael')
+  return CONTENT_STAGE_CONFIG.reduce((acc, stage) => {
+    const current = tasks?.[stage.key] || {}
+    acc[stage.key] = {
+      owner: current.owner || item[`${stage.key}_owner`] || base[stage.key].owner,
+      due: current.due || item[`${stage.key}_due`] || '',
+      status: current.status || 'pending',
+    }
+    return acc
+  }, {})
+}
+
+function getNextStageTask(item) {
+  const tasks = normalizeStageTasks(item.stage_tasks, item)
+  const stage = CONTENT_STAGE_CONFIG.find((candidate) => tasks[candidate.key]?.status !== 'done') || CONTENT_STAGE_CONFIG[CONTENT_STAGE_CONFIG.length - 1]
+  return { ...stage, ...(tasks[stage.key] || {}) }
+}
+
+function normalizeAttachments(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.filter(Boolean).map((file) => ({
+    id: file.id || file.drive_file_id || file.file_url || file.url || crypto.randomUUID(),
+    name: file.name || file.file_name || file.title || 'Arquivo',
+    url: file.url || file.file_url || '',
+    mimeType: file.mimeType || file.mime_type || '',
+    size: file.size || file.size_bytes || '',
+    stage: file.stage || '',
+    source: file.source || 'manual',
+    uploadedAt: file.uploadedAt || file.created_at || '',
+  }))
+  return normalizeMediaFiles(value).map((file) => ({ ...file, source: file.source || 'legado' }))
+}
+
 function normalizeContentItem(item, clients = []) {
   const client = clients.find((row) => row.id === item.client_id) || clients.find((row) => row.name === item.client)
+  const attachments = normalizeAttachments(item.attachments || item.media_files || item.media)
+  const responsible = item.responsible || item.owner || 'Jônatas Ismael'
   return {
     ...item,
     client_id: item.client_id || client?.id || '',
     client: item.client || client?.name || 'Sem cliente',
+    content_type: item.content_type || (item.status === 'Ideia' || item.format === 'Ideia solta' ? 'idea' : 'content'),
     title: item.title || item.caption || 'Sem título',
     format: item.format || inferContentFormat(item),
     status: normalizeContentStatus(item.status),
-    responsible: item.responsible || item.owner || 'DBE',
+    responsible,
     delivery_date: item.delivery_date || item.due || '',
     post_date: item.post_date || item.date?.slice?.(0, 10) || '',
     cover_date: item.cover_date || '',
     reference_url: item.reference_url || item.reference || '',
     caption: item.caption || item.cta || '',
     priority: item.priority || 'Média',
+    attachments,
     media_files: item.media_files || item.media || '',
+    stage_tasks: normalizeStageTasks(item.stage_tasks, { ...item, responsible }),
     notes: item.notes || item.body || '',
     source: item.source || 'roteiros',
+    idea_origin_id: item.idea_origin_id || '',
+    campaign_id: item.campaign_id || '',
     createdAt: item.createdAt || item.created_at || '',
     updatedAt: item.updatedAt || item.updated_at || '',
   }
@@ -6626,7 +7009,7 @@ function priorityTone(priority) {
   return { Baixa: 'blue', Média: 'gold', Alta: 'danger', Urgente: 'danger' }[priority] || 'default'
 }
 
-function countScriptStages(scripts = [], posts = []) {
+function countScriptStages(scripts = []) {
   const counts = {
     Ideias: 0,
     Gravados: 0,
@@ -6635,7 +7018,7 @@ function countScriptStages(scripts = [], posts = []) {
     Revisão: 0,
     Aprovados: 0,
     'Falta agendamento': 0,
-    Agendados: posts.filter((post) => post.status === 'Agendado').length,
+    Agendados: 0,
     Reprovados: 0,
   }
   scripts.forEach((script) => {
