@@ -13,3 +13,9 @@ export const supabase = url && anon ? createClient(url, anon, {
 }) : null
 
 export const isSupabaseConfigured = Boolean(supabase)
+
+export async function getAccessToken() {
+  if (!supabase) return null
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token || null
+}

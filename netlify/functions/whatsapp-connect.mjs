@@ -1,6 +1,8 @@
 // Conecta/verifica a instância do WhatsApp na Evolution API.
 // action = "status"  -> estado da conexão (open/connecting/close)
 // action = "connect" -> cria a instância (se preciso) e devolve o QR code
+import { requireAdminUser } from './lib/auth.mjs'
+
 const URL = process.env.EVOLUTION_API_URL
 const KEY = process.env.EVOLUTION_API_KEY
 const INSTANCE = process.env.EVOLUTION_INSTANCE || 'dbe-flow'
@@ -13,6 +15,8 @@ export default async (req) => {
   const { action = 'status' } = body
 
   try {
+    await requireAdminUser(req)
+
     if (action === 'status') {
       const res = await fetch(`${URL}/instance/connectionState/${INSTANCE}`, { headers })
       const data = await res.json().catch(() => ({}))
@@ -53,7 +57,7 @@ export default async (req) => {
 
     return json({ error: 'action inválida' }, 400)
   } catch (err) {
-    return json({ error: err.message }, 502)
+    return json({ error: err.message }, err.status || 502)
   }
 }
 

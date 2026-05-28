@@ -6,11 +6,13 @@ import {
   normalizeUser,
   sbPatch,
 } from './lib/meta-instagram.mjs'
+import { requireAdminUser } from './lib/auth.mjs'
 
 export default async (req) => {
   if (req.method !== 'POST') return json({ error: 'Metodo nao permitido' }, 405)
   try {
     assertServerConfig()
+    await requireAdminUser(req)
     const body = await req.json().catch(() => ({}))
     const clientId = body.clientId || body.client_id
     const user = normalizeUser(body)

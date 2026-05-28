@@ -2,13 +2,19 @@
 // As chaves secretas (Evolution, Meta, OpenRouter) ficam SÓ no servidor.
 // Em produção (Netlify) e com `netlify dev` localmente, o caminho abaixo funciona.
 
+import { getAccessToken } from './supabase'
+
 const BASE = '/.netlify/functions'
 
 async function call(fn, body) {
   try {
+    const token = await getAccessToken()
     const res = await fetch(`${BASE}/${fn}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify(body || {}),
     })
     const json = await res.json().catch(() => ({}))

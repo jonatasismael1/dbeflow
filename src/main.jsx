@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Activity,
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  AlertCircle,
   BadgeDollarSign,
   Bot,
   Calendar,
@@ -16,18 +21,23 @@ import {
   Download,
   ExternalLink,
   Eye,
+  EyeOff,
   FileSignature,
   FileText,
   Film,
   Filter,
+  FlipHorizontal,
   FolderOpen,
   Gauge,
   HardDrive,
   LayoutDashboard,
   Lock,
   LogOut,
+  Map,
+  Maximize2,
   Megaphone,
   Menu,
+  Minimize2,
   MessageCircle,
   Minus,
   Mic,
@@ -40,17 +50,25 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Save,
   Search,
   Send,
   Settings,
   Smile,
+  Smartphone,
   Sparkles,
+  Star,
   Sun,
+  Swords,
   Target,
+  Timer,
   Trash2,
   TrendingUp,
+  Type,
   UploadCloud,
   User,
+  UserCheck,
   UserPlus,
   Users,
   WalletCards,
@@ -61,24 +79,29 @@ import { format } from 'date-fns'
 import './styles.css'
 import logo from './assets/logo-dbe.png'
 import { importedClients, importedScripts } from './data/importedData.js'
-import { isSupabaseConfigured } from './lib/supabase'
-import { loadAll, insertItem, saveItem, deleteItem, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
+import { supabase, isSupabaseConfigured } from './lib/supabase'
+import { loadAll, insertItem, saveItem, deleteItem, addActivityLog, loadActivityLogs, loadContentComments, addContentComment, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
 import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v2' // v2 = dados reais importados do Notion
 const AUTH_KEY = 'dbe-auth-v1'
-const MEMBERS_KEY = 'dbe-members'
 const THEME_KEY = 'dbe-theme-v1'
 const TOAST_EVENT = 'dbe-flow-toast'
 const AVATAR_MAX_FILE_SIZE = 8 * 1024 * 1024
 const AVATAR_OUTPUT_SIZE = 320
+
+const LEGACY_AUTH_PASS = import.meta.env.VITE_DBE_LEGACY_AUTH_PASS || ''
+const DEFAULT_ADMIN_EMAILS = new Set([
+  'assessoriadbe@gmail.com',
+  'thayaneluise@gmail.com',
+  'jonatas.ismael25@gmail.com',
+])
 
 const USERS = [
   { email: 'assessoriadbe@gmail.com', name: 'DBE Digital', role: 'admin', avatar: null },
   { email: 'thayaneluise@gmail.com', name: 'Thayane', role: 'admin', avatar: null },
   { email: 'jonatas.ismael25@gmail.com', name: 'Jonatas', role: 'admin', avatar: null },
 ]
-const AUTH_PASS = 'Db3digit@l'
 
 const ENTITY_LABELS = {
   clients: 'Cliente',
@@ -90,6 +113,10 @@ const ENTITY_LABELS = {
   contracts: 'Contrato',
   diagnostics: 'Diagnostico',
   briefings: 'Jornada',
+  campaigns: 'Campanha',
+  approvals: 'Aprovacao',
+  approvalBatches: 'Lote de aprovacao',
+  marketMaps: 'Mapa de mercado',
 }
 
 function notify(message, tone = 'success') {
@@ -111,26 +138,85 @@ function mutationNotice(action, key, patch = {}) {
 }
 
 function readStoredMembers() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MEMBERS_KEY) || '[]')
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
+  return []
 }
 
 function getTeamMembers() {
   const byEmail = new Map(USERS.map((user) => [user.email.toLowerCase(), { ...user }]))
-  readStoredMembers().forEach((member) => {
-    if (!member?.email) return
-    const key = member.email.toLowerCase()
-    byEmail.set(key, { ...(byEmail.get(key) || {}), ...member })
-  })
   return Array.from(byEmail.values())
 }
 
 function persistTeamMembers(members) {
-  localStorage.setItem(MEMBERS_KEY, JSON.stringify(members))
+  return members
+}
+
+function stripClientSecrets(client = {}) {
+  const { credentials, passwords, accesses, login, secret, ...safeClient } = client
+  return safeClient
+}
+
+function stableStringify(value) {
+  try { return JSON.stringify(value || {}) } catch { return '' }
+}
+
+function emptyClientForm() {
+  return {
+    name: '',
+    phone: '',
+    instagram: '',
+    segment: '',
+    plan: 'Autoridade Médica',
+    status: 'Onboarding',
+    monthly: 6200,
+    owner: 'DBE',
+    next: 'Briefing inicial',
+    payment_due: '',
+    payment_status: 'A receber',
+    billing_contact: '',
+    billing_phone: '',
+    billing_email: '',
+    contract_status: 'Pendente',
+    client_origin: 'Manual',
+    logo_url: '',
+    personal_notes: '',
+    content_preferences: '',
+    recording_preferences: '',
+  }
+}
+
+function displayNameFromEmail(email = '') {
+  const [name] = email.split('@')
+  return name ? name.replace(/[._-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : 'Usuario'
+}
+
+async function resolveSupabaseUser(session) {
+  const authUser = session?.user
+  if (!authUser) return null
+  const email = authUser.email || ''
+  const fallback = {
+    id: authUser.id,
+    email,
+    name: authUser.user_metadata?.name || authUser.user_metadata?.full_name || displayNameFromEmail(email),
+    avatar: authUser.user_metadata?.avatar_url || null,
+    role: DEFAULT_ADMIN_EMAILS.has(email.toLowerCase()) ? 'admin' : 'editor',
+    authProvider: 'supabase',
+  }
+
+  try {
+    const [{ data: profile }, { data: membership }] = await Promise.all([
+      supabase.from('profiles').select('full_name, avatar_url').eq('id', authUser.id).maybeSingle(),
+      supabase.from('workspace_members').select('role').eq('user_id', authUser.id).eq('status', 'active').limit(1).maybeSingle(),
+    ])
+    return {
+      ...fallback,
+      name: profile?.full_name || fallback.name,
+      avatar: profile?.avatar_url || fallback.avatar,
+      role: membership?.role || fallback.role,
+    }
+  } catch (err) {
+    console.warn('[auth] perfil/workspace indisponivel', err.message)
+    return fallback
+  }
 }
 
 function resizeAvatarFile(file) {
@@ -171,6 +257,9 @@ const nav = [
   { id: 'cronograma',   label: 'Cronograma',   icon: CalendarDays },
   { id: 'calendario',   label: 'Calendário',   icon: Calendar },
   { id: 'teleprompter', label: 'Teleprompter', icon: MonitorPlay },
+  { id: 'campanhas',    label: 'Campanhas',    icon: Megaphone },
+  { id: 'aprovacoes',   label: 'Aprovações',   icon: UserCheck },
+  { id: 'mercado',      label: 'Mapa de Mercado', icon: Map },
   { id: 'producao',     label: 'Produção',     icon: Film },
   { id: 'clientes',     label: 'Clientes',     icon: Users },
   { id: 'conversas',    label: 'Conversas',    icon: MessageCircle },
@@ -191,6 +280,9 @@ const pageDescriptions = {
   cronograma: 'Planejamento de conteudo por cliente, formato e status.',
   calendario: 'Agenda editorial para edicao, capa e postagem.',
   teleprompter: 'Leitura guiada para gravacoes e roteiros aprovados.',
+  campanhas: 'Agrupe conteudos por objetivo, campanha e fase de aprovacao.',
+  aprovacoes: 'Links publicos de revisao, comentarios e aprovacao de roteiros.',
+  mercado: 'Mapa de mercado estrategico usado como base para conteudo e campanhas.',
   producao: 'Pastas, projetos e revisoes de video no Google Drive.',
   clientes: 'Carteira ativa, dados operacionais e historico de cada cliente.',
   conversas: 'Central de relacionamento e respostas pelo WhatsApp.',
@@ -219,19 +311,27 @@ const seed = {
   diagnostics: [],
   briefings: [],
   cronograma: [],
+  campaigns: [],
+  approvals: [],
+  approvalBatches: [],
+  marketMaps: [],
 }
 
 function App() {
   const [active, setActive] = useState('dashboard')
   const [state, setState] = useState(seed)
   const [loading, setLoading] = useState(true)
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [query, setQuery] = useState('')
   const [currentUser, setCurrentUser] = useState(() => {
+    if (isSupabaseConfigured) return null
     try { return JSON.parse(localStorage.getItem(AUTH_KEY)) } catch { return null }
   })
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
   const [finSummary, setFinSummary] = useState(null)
   const isPublicDiagnostic = new URLSearchParams(window.location.search).get('diagnostico') === 'publico'
+  const publicApprovalMatch = window.location.pathname.match(/^\/aprovacao\/([^/]+)$/)
+  const publicBatchApprovalMatch = window.location.pathname.match(/^\/aprovacao\/lote\/([^/]+)$/)
 
   // Aplica o tema ao documento
   useEffect(() => {
@@ -264,17 +364,87 @@ function App() {
       .catch(() => {})
   }, [])
 
-  const login = (user) => {
+  const login = async ({ email, password }) => {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) return { ok: false, error: error.message || 'E-mail ou senha incorretos' }
+      const user = await resolveSupabaseUser(data.session)
+      setCurrentUser(user)
+      localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+      if (user?.role !== 'admin') setActive('cronograma')
+      return { ok: true }
+    }
+
+    const members = getTeamMembers()
+    const teamUser = members.find(u => u.email.toLowerCase() === email.toLowerCase())
+    if (LEGACY_AUTH_PASS && teamUser?.role === 'admin' && password === LEGACY_AUTH_PASS) {
+      const user = { ...teamUser, authProvider: 'legacy' }
+      setCurrentUser(user)
+      localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+      return { ok: true }
+    }
+
+    return {
+      ok: false,
+      error: LEGACY_AUTH_PASS
+        ? 'E-mail ou senha incorretos'
+        : 'Configure o Supabase Auth ou VITE_DBE_LEGACY_AUTH_PASS para modo local.',
+    }
+  }
+
+  const hydrateAuthSession = useCallback(async (session) => {
+    const user = await resolveSupabaseUser(session)
+    setCurrentUser(user)
+    if (user) localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+    else localStorage.removeItem(AUTH_KEY)
+  }, [])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false)
+      return undefined
+    }
+
+    let alive = true
+    supabase.auth.getSession()
+      .then(async ({ data }) => {
+        if (!alive) return
+        await hydrateAuthSession(data.session)
+      })
+      .catch((err) => console.warn('[auth] sessao', err.message))
+      .finally(() => { if (alive) setAuthLoading(false) })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      hydrateAuthSession(session)
+    })
+
+    return () => {
+      alive = false
+      listener.subscription?.unsubscribe()
+    }
+  }, [hydrateAuthSession])
+
+  const removedLegacyLogin = (user) => {
     setCurrentUser(user)
     localStorage.setItem(AUTH_KEY, JSON.stringify(user))
     // Editores só têm acesso às abas restritas
     if (user.role !== 'admin') setActive('cronograma')
   }
-  const updateCurrentUser = (user) => {
+  const updateCurrentUser = async (user) => {
+    if (isSupabaseConfigured && user?.id) {
+      const { error } = await supabase.from('profiles').upsert({
+        id: user.id,
+        email: user.email,
+        full_name: user.name,
+        avatar_url: user.avatar,
+      })
+      if (error) throw new Error(error.message)
+    }
     setCurrentUser(user)
     localStorage.setItem(AUTH_KEY, JSON.stringify(user))
   }
-  const logout = () => {
+  const logout = async () => {
+    if (isSupabaseConfigured) await supabase.auth.signOut()
     setCurrentUser(null)
     localStorage.removeItem(AUTH_KEY)
   }
@@ -290,13 +460,19 @@ function App() {
 
   // Carrega os dados (nuvem se Supabase configurado; senão localStorage)
   useEffect(() => {
+    if (isSupabaseConfigured && authLoading) return undefined
+    if (isSupabaseConfigured && !currentUser) {
+      setLoading(false)
+      return undefined
+    }
     let alive = true
+    setLoading(true)
     loadAll(seed)
       .then((loaded) => { if (alive) setState(loaded) })
       .catch((err) => console.warn('[app] loadAll', err))
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [])
+  }, [authLoading, currentUser?.id])
 
   // No modo local, espelha o estado inteiro no navegador
   useEffect(() => {
@@ -313,24 +489,82 @@ function App() {
 
   // Adiciona: persiste no banco e usa o registro retornado (com id real)
   const addItem = async (key, item) => {
-    const record = await insertItem(key, item)
-    setState((current) => ({ ...current, [key]: [record, ...(current[key] || [])] }))
-    notify(mutationNotice('create', key), 'success')
-    return record
+    try {
+      const record = await insertItem(key, item)
+      await addActivityLog({
+        entityType: key,
+        entityId: record.id,
+        action: 'create',
+        metadata: { title: record.title || record.name || record.client || null },
+        actor: currentUser,
+      })
+      setState((current) => ({ ...current, [key]: [record, ...(current[key] || [])] }))
+      notify(mutationNotice('create', key), 'success')
+      return record
+    } catch (err) {
+      notify(`Erro ao criar registro: ${err.message}`, 'danger')
+      throw err
+    }
   }
   // Atualiza: aplica patch local + salva o registro completo no banco
-  const updateItem = (key, id, patch) => {
-    const current = (state[key] || []).find((item) => item.id === id) || {}
-    const merged = { ...current, ...patch }
-    setState((cur) => ({ ...cur, [key]: cur[key].map((item) => item.id === id ? merged : item) }))
-    saveItem(key, id, merged)
-    notify(mutationNotice('update', key, patch), patch.status?.toLowerCase?.().includes('atras') ? 'warning' : 'success')
+  const updateItem = async (key, id, patch) => {
+    let previous = null
+    let merged = null
+    setState((cur) => {
+      const rows = cur[key] || []
+      previous = rows.find((item) => item.id === id) || null
+      merged = { ...(previous || {}), ...patch }
+      return { ...cur, [key]: rows.map((item) => item.id === id ? merged : item) }
+    })
+    try {
+      await saveItem(key, id, merged)
+      await addActivityLog({
+        entityType: key,
+        entityId: id,
+        action: 'update',
+        metadata: {
+          changed: Object.keys(patch || {}),
+          status: patch?.status || null,
+          title: merged?.title || merged?.name || null,
+        },
+        actor: currentUser,
+      })
+      notify(mutationNotice('update', key, patch), patch.status?.toLowerCase?.().includes('atras') ? 'warning' : 'success')
+      return merged
+    } catch (err) {
+      if (previous) {
+        setState((cur) => ({ ...cur, [key]: (cur[key] || []).map((item) => item.id === id ? previous : item) }))
+      }
+      notify(`Erro ao salvar registro: ${err.message}`, 'danger')
+      throw err
+    }
   }
   // Remove: tira do estado + apaga no banco
-  const removeItem = (key, id) => {
-    setState((cur) => ({ ...cur, [key]: cur[key].filter((item) => item.id !== id) }))
-    deleteItem(key, id)
-    notify(mutationNotice('delete', key), 'danger')
+  const removeItem = async (key, id) => {
+    const label = ENTITY_LABELS[key] || 'registro'
+    if (!window.confirm(`Excluir este ${label.toLowerCase()}? Esta acao nao pode ser desfeita.`)) return false
+    let removed = null
+    setState((cur) => {
+      const rows = cur[key] || []
+      removed = rows.find((item) => item.id === id) || null
+      return { ...cur, [key]: rows.filter((item) => item.id !== id) }
+    })
+    try {
+      await deleteItem(key, id)
+      await addActivityLog({
+        entityType: key,
+        entityId: id,
+        action: 'delete',
+        metadata: { title: removed?.title || removed?.name || null },
+        actor: currentUser,
+      })
+      notify(mutationNotice('delete', key), 'danger')
+      return true
+    } catch (err) {
+      if (removed) setState((cur) => ({ ...cur, [key]: [removed, ...(cur[key] || [])] }))
+      notify(`Erro ao excluir registro: ${err.message}`, 'danger')
+      throw err
+    }
   }
   // Diagnóstico → salva o laudo e cria um lead no CRM, ambos no banco
   const addDiagnosticSubmission = async (submission) => {
@@ -363,6 +597,25 @@ function App() {
 
   if (isPublicDiagnostic) {
     return <PublicDiagnosticPage onSubmit={addDiagnosticSubmission} />
+  }
+
+  if (publicBatchApprovalMatch) {
+    return <PublicBatchApprovalPage token={decodeURIComponent(publicBatchApprovalMatch[1])} />
+  }
+
+  if (publicApprovalMatch) {
+    return <PublicApprovalPage token={decodeURIComponent(publicApprovalMatch[1])} />
+  }
+
+  if (authLoading) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <img src={logo} alt="DBE" className="login-logo" />
+          <p className="login-sub">Verificando sessao...</p>
+        </div>
+      </div>
+    )
   }
 
   if (!currentUser) {
@@ -450,9 +703,12 @@ function App() {
         {active === 'onboarding' && <Onboarding state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'contratos' && <Contratos state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'conteudo' && <Conteudo state={state} addItem={addItem} updateItem={updateItem} />}
-        {active === 'cronograma' && <CronogramaConteudo state={state} addItem={addItem} updateItem={updateItem} />}
+        {active === 'cronograma' && <CronogramaConteudo state={state} addItem={addItem} updateItem={updateItem} currentUser={currentUser} />}
         {active === 'calendario' && <Calendario state={state} updateItem={updateItem} />}
-        {active === 'teleprompter' && <Teleprompter state={state} />}
+        {active === 'teleprompter' && <TeleprompterCreator state={state} />}
+        {active === 'campanhas' && <Campanhas state={state} addItem={addItem} updateItem={updateItem} removeItem={removeItem} />}
+        {active === 'aprovacoes' && <Aprovacoes state={state} addItem={addItem} updateItem={updateItem} removeItem={removeItem} />}
+        {active === 'mercado' && <MapaMercado state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'ai' && <DebyAI state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'instagram' && <InstagramAnalytics state={state} currentUser={currentUser} />}
         {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
@@ -519,13 +775,29 @@ function LoginPage({ onLogin }) {
   const [pass, setPass] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const submit = (e) => {
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      const result = await onLogin({ email: email.trim(), password: pass })
+      if (!result?.ok) setError(result?.error || 'E-mail ou senha incorretos')
+    } catch (err) {
+      setError(err.message || 'Nao foi possivel entrar')
+    } finally {
+      setBusy(false)
+    }
+    return
+  }
+
+  const legacySubmitDisabled = (e) => {
     e.preventDefault()
     const members = getTeamMembers()
     const teamUser = members.find(u => u.email.toLowerCase() === email.toLowerCase())
     // Administradores fixos — usam a senha compartilhada
-    if (teamUser?.role === 'admin' && pass === AUTH_PASS) { onLogin({ ...teamUser }); return }
+    if (teamUser?.role === 'admin' && pass === LEGACY_AUTH_PASS) { onLogin({ ...teamUser }); return }
     // Editores criados em Configurações — usam senha individual
     if (teamUser?.password && teamUser.password === pass) { onLogin({ ...teamUser }); return }
     setError('E-mail ou senha incorretos')
@@ -561,8 +833,8 @@ function LoginPage({ onLogin }) {
             </button>
           </label>
           {error && <p style={{color:'var(--red)',fontSize:13,margin:0,textAlign:'center'}}>{error}</p>}
-          <button type="submit" className="primary" style={{width:'100%',marginTop:4,height:44,fontSize:15}}>
-            Entrar
+          <button type="submit" className="primary" style={{width:'100%',marginTop:4,height:44,fontSize:15}} disabled={busy}>
+            {busy ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
         <p style={{textAlign:'center',fontSize:12,color:'var(--soft)',marginTop:20}}>
@@ -706,7 +978,8 @@ function Dashboard({ state, metrics, setActive, finSummary }) {
 function Clientes({ state, addItem, updateItem, query }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(state.clients[0]?.id || '')
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => emptyClientForm())
+  /*
     name: '',
     phone: '',
     instagram: '',
@@ -724,11 +997,11 @@ function Clientes({ state, addItem, updateItem, query }) {
     contract_status: 'Pendente',
     client_origin: 'Manual',
     logo_url: '',
-    credentials: '',
     personal_notes: '',
     content_preferences: '',
     recording_preferences: '',
   })
+  */
   const clients = state.clients.filter((client) => JSON.stringify(client).toLowerCase().includes(query.toLowerCase()))
   const selected = state.clients.find((client) => client.id === selectedId) || state.clients[0]
   const selectedDiagnostics = (state.diagnostics || []).filter((item) => item.name === selected?.name || item.phone === selected?.phone)
@@ -741,7 +1014,9 @@ function Clientes({ state, addItem, updateItem, query }) {
 
   const saveClientDetails = () => {
     if (!selected?.id) return
-    updateItem('clients', selected.id, clientDraft)
+    const safeDraft = stripClientSecrets(clientDraft)
+    setClientDraft(safeDraft)
+    updateItem('clients', selected.id, safeDraft)
     const latestInvoice = selectedInvoices[0]
     if (latestInvoice && clientDraft.payment_status) {
       updateItem('invoices', latestInvoice.id, {
@@ -780,6 +1055,13 @@ function Clientes({ state, addItem, updateItem, query }) {
     if (latestInvoice) updateItem('invoices', latestInvoice.id, { ...latestInvoice, status })
   }
 
+  const openNewClientModal = () => {
+    setForm(emptyClientForm())
+    setModalOpen(true)
+  }
+  const closeClientModal = () => setModalOpen(false)
+  const clientFormDirty = modalOpen && stableStringify(form) !== stableStringify(emptyClientForm())
+
   return (
     <section className="page-grid">
       <div className="grid-4">
@@ -790,7 +1072,7 @@ function Clientes({ state, addItem, updateItem, query }) {
       </div>
 
       <div className="client-layout">
-        <Panel title="Carteira" action="Novo cliente" onAction={() => setModalOpen(true)}>
+        <Panel title="Carteira" action="Novo cliente" onAction={openNewClientModal}>
           <div className="stack-list">
             {clients.map((client) => (
               <button key={client.id} className={`client-row ${selected?.id === client.id ? 'active' : ''}`} onClick={() => setSelectedId(client.id)}>
@@ -885,10 +1167,7 @@ function Clientes({ state, addItem, updateItem, query }) {
                       <span>Preferências de conteúdo</span>
                       <textarea className="textarea" value={clientDraft.content_preferences || ''} onChange={(event) => setClientDraft({ ...clientDraft, content_preferences: event.target.value })} />
                     </label>
-                    <label className="field span">
-                      <span>Senhas e acessos</span>
-                      <textarea className="textarea" value={clientDraft.credentials || ''} onChange={(event) => setClientDraft({ ...clientDraft, credentials: event.target.value })} />
-                    </label>
+                    <div className="inline-notice warning span">Senhas e acessos foram removidos do cadastro do cliente. Use um cofre externo para credenciais.</div>
                     <label className="field span">
                       <span>Informações pessoais</span>
                       <textarea className="textarea" value={clientDraft.personal_notes || ''} onChange={(event) => setClientDraft({ ...clientDraft, personal_notes: event.target.value })} />
@@ -909,7 +1188,7 @@ function Clientes({ state, addItem, updateItem, query }) {
         </Panel>
       </div>
 
-      <Modal title="Novo cliente" open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal title="Novo cliente" open={modalOpen} onClose={closeClientModal} confirmOnClose={clientFormDirty}>
         <div className="form-grid">
           <label className="field span client-photo-upload">
             <span>Foto do cliente</span>
@@ -962,6 +1241,7 @@ function Clientes({ state, addItem, updateItem, query }) {
                 billing_email: form.billing_email,
               })
             }
+            setForm(emptyClientForm())
             setModalOpen(false)
           }}><Plus size={16} /> Salvar cliente</button>
         </div>
@@ -1501,18 +1781,24 @@ function Conteudo({ state, addItem, updateItem }) {
   )
 }
 
-function CronogramaConteudo({ state, addItem, updateItem }) {
+function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
   const [expanded, setExpanded] = useState({})
   const [filters, setFilters] = useState({ query: '', client: 'Todos', format: 'Todos', status: 'Todos', responsible: 'Todos', month: 'Todos', priority: 'Todos', archived: false })
+  const [scheduleView, setScheduleView] = useState('lista')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(() => emptyContentForm(state.clients))
+  const [formBaseline, setFormBaseline] = useState('')
   const [driveFeedback, setDriveFeedback] = useState('')
   const [editedVideos, setEditedVideos] = useState([])
   const [selectedEditedVideoId, setSelectedEditedVideoId] = useState('')
   const [reviewNote, setReviewNote] = useState('')
   const [reviewFeedback, setReviewFeedback] = useState('')
   const [reviewLoading, setReviewLoading] = useState(false)
+  const [contentComments, setContentComments] = useState([])
+  const [activityLogs, setActivityLogs] = useState([])
+  const [commentDraft, setCommentDraft] = useState('')
+  const [commentsLoading, setCommentsLoading] = useState(false)
   const contentFileInputRef = useRef(null)
   const [sideItem, setSideItem] = useState(null)
   const [sideMinimized, setSideMinimized] = useState(false)
@@ -1541,27 +1827,105 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
     client,
     items: sortContentItems(filteredContent.filter((item) => contentBelongsToClient(item, client))),
   }))
+  const ideaItems = sortContentItems(filteredContent.filter((item) => item.status === 'Ideia'))
+  const kanbanColumns = ['Ideia', 'A produzir', 'Em produção', 'Roteiro pronto', 'Arte em criação', 'Aprovando', 'Aprovado', 'Postado']
+    .map((status) => ({
+      status,
+      items: sortContentItems(filteredContent.filter((item) => item.status === status)),
+    }))
 
   const openNew = (client) => {
+    const nextForm = emptyContentForm(state.clients, client)
     setEditing(null)
-    setForm(emptyContentForm(state.clients, client))
+    setForm(nextForm)
+    setFormBaseline(stableStringify(nextForm))
     setDriveFeedback('')
     setEditedVideos([])
     setSelectedEditedVideoId('')
     setReviewNote('')
     setReviewFeedback('')
+    setContentComments([])
+    setActivityLogs([])
+    setCommentDraft('')
     setModalOpen(true)
   }
 
-  const openEdit = (item) => {
+  const refreshContentHistory = async (itemId) => {
+    if (!itemId) {
+      setContentComments([])
+      setActivityLogs([])
+      return
+    }
+    setCommentsLoading(true)
+    try {
+      const [comments, logs] = await Promise.all([
+        loadContentComments('scripts', itemId),
+        loadActivityLogs('scripts', itemId),
+      ])
+      setContentComments(comments)
+      setActivityLogs(logs)
+    } finally {
+      setCommentsLoading(false)
+    }
+  }
+
+  const openEdit = async (item) => {
+    const nextForm = { ...emptyContentForm(state.clients), ...item }
     setEditing(item)
-    setForm({ ...emptyContentForm(state.clients), ...item })
+    setForm(nextForm)
+    setFormBaseline(stableStringify(nextForm))
     setDriveFeedback('')
     setEditedVideos([])
     setSelectedEditedVideoId('')
     setReviewNote('')
     setReviewFeedback('')
+    setCommentDraft('')
+    refreshContentHistory(item.id)
     setModalOpen(true)
+  }
+
+  const openNewIdea = () => {
+    const nextForm = { ...emptyContentForm(state.clients), status: 'Ideia', format: 'Ideia solta' }
+    setEditing(null)
+    setForm(nextForm)
+    setFormBaseline(stableStringify(nextForm))
+    setDriveFeedback('')
+    setEditedVideos([])
+    setSelectedEditedVideoId('')
+    setReviewNote('')
+    setReviewFeedback('')
+    setContentComments([])
+    setActivityLogs([])
+    setCommentDraft('')
+    setModalOpen(true)
+  }
+
+  const saveContentComment = async () => {
+    if (!editing?.id || !commentDraft.trim()) return
+    try {
+      const comment = await addContentComment({
+        entityType: 'scripts',
+        entityId: editing.id,
+        body: commentDraft.trim(),
+        author: currentUser,
+      })
+      setContentComments((current) => [...current, comment])
+      setCommentDraft('')
+      const logs = await loadActivityLogs('scripts', editing.id)
+      setActivityLogs(logs)
+      notify('Comentario salvo no conteudo.', 'success')
+    } catch (err) {
+      notify(`Erro ao salvar comentario: ${err.message}`, 'danger')
+    }
+  }
+
+  const closeContentModal = () => setModalOpen(false)
+  const contentFormDirty = modalOpen && stableStringify(form) !== formBaseline
+
+  const promoteIdea = (item) => {
+    const now = new Date().toISOString()
+    updateItem('scripts', item.id, { ...item, status: 'A produzir', updatedAt: now })
+    setSideItem({ ...item, status: 'A produzir', updatedAt: now })
   }
 
   const saveContent = async () => {
@@ -1770,6 +2134,72 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
         </div>
       </Panel>
 
+      <div className="schedule-view-tabs" role="tablist" aria-label="Visao do cronograma">
+        {[
+          ['lista', 'Lista por cliente'],
+          ['ideias', `Ideias (${ideaItems.length})`],
+          ['kanban', 'Kanban'],
+        ].map(([id, label]) => (
+          <button key={id} className={scheduleView === id ? 'active' : ''} onClick={() => setScheduleView(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {scheduleView === 'ideias' && (
+        <Panel title="Backlog de ideias" action="Nova ideia" onAction={openNewIdea}>
+          {ideaItems.length ? (
+            <div className="idea-backlog">
+              {ideaItems.map((item) => (
+                <article className="idea-card" key={item.id}>
+                  <div>
+                    <Badge text={item.client} tone="blue" />
+                    <h3>{item.title}</h3>
+                    <p>{item.notes || item.caption || item.reference_url || 'Sem detalhes adicionais.'}</p>
+                  </div>
+                  <div className="idea-meta">
+                    <span>{item.responsible || 'DBE'}</span>
+                    <Badge text={item.priority || 'Média'} tone={item.priority === 'Urgente' || item.priority === 'Alta' ? 'danger' : 'gold'} />
+                  </div>
+                  <div className="button-row compact no-margin">
+                    <button className="secondary" onClick={() => openEdit(item)}><Pencil size={14} /> Detalhar</button>
+                    <button className="primary" onClick={() => promoteIdea(item)}><Check size={14} /> Virar conteúdo</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-box">Nenhuma ideia nos filtros atuais.</div>
+          )}
+        </Panel>
+      )}
+
+      {scheduleView === 'kanban' && (
+        <div className="content-kanban" aria-label="Kanban de produção">
+          {kanbanColumns.map((column) => (
+            <section className="kanban-column" key={column.status}>
+              <div className="kanban-head">
+                <strong>{column.status}</strong>
+                <Badge text={column.items.length} tone={column.items.length ? 'blue' : 'default'} />
+              </div>
+              <div className="kanban-items">
+                {column.items.length ? column.items.map((item) => (
+                  <button className="kanban-card" key={item.id} onClick={() => openEdit(item)}>
+                    <strong>{item.title}</strong>
+                    <span>{item.client}</span>
+                    <div>
+                      <Badge text={item.format} tone={formatTone(item.format)} />
+                      <small>{date(item.post_date) || date(item.delivery_date) || '-'}</small>
+                    </div>
+                  </button>
+                )) : <div className="kanban-empty">Sem itens</div>}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {scheduleView === 'lista' && (
       <div className={sideItem ? 'schedule-with-panel' : 'schedule-list'}>
         <div className="schedule-list">
           {groups.map(({ client, items }) => {
@@ -1873,8 +2303,9 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
           </div>
         )}
       </div>
+      )}
 
-      <Modal title={editing ? 'Editar conteúdo' : 'Novo conteúdo'} open={modalOpen} onClose={() => setModalOpen(false)} wide={form.format === 'Roteiro de Reels'}>
+      <Modal title={editing ? 'Editar conteúdo' : 'Novo conteúdo'} open={modalOpen} onClose={closeContentModal} wide={form.format === 'Roteiro de Reels'} confirmOnClose={contentFormDirty}>
         <div className="content-modal">
           <div className="form-grid">
             <Select label="Cliente / Projeto" value={form.client_id} onChange={(client_id) => {
@@ -1991,6 +2422,51 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
               <span>Observações internas</span>
               <textarea className="textarea" value={form.notes || ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
             </label>
+            {editing?.id && (
+              <div className="content-history-panel span">
+                <div className="history-grid">
+                  <section>
+                    <div className="history-head">
+                      <strong>Comentários</strong>
+                      {commentsLoading && <span>Carregando...</span>}
+                    </div>
+                    <div className="comment-list">
+                      {contentComments.length ? contentComments.map((comment) => (
+                        <article className="comment-item" key={comment.id}>
+                          <div>
+                            <strong>{comment.author_name || comment.author_email || 'DBE'}</strong>
+                            <span>{dateTime(comment.created_at)}</span>
+                          </div>
+                          <p>{comment.body}</p>
+                        </article>
+                      )) : <div className="empty-box compact-empty">Nenhum comentário ainda.</div>}
+                    </div>
+                    <label className="field no-margin">
+                      <span>Novo comentário</span>
+                      <textarea className="textarea" value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="Registre contexto, ajuste pedido ou decisão interna." />
+                    </label>
+                    <div className="button-row compact">
+                      <button className="primary" onClick={saveContentComment} disabled={!commentDraft.trim()}><MessageCircle size={14} /> Comentar</button>
+                    </div>
+                  </section>
+                  <section>
+                    <div className="history-head">
+                      <strong>Histórico</strong>
+                      <button className="ghost btn-sm" onClick={() => refreshContentHistory(editing.id)}>Atualizar</button>
+                    </div>
+                    <div className="activity-list">
+                      {activityLogs.length ? activityLogs.map((log) => (
+                        <article className="activity-item" key={log.id}>
+                          <span>{activityLabel(log.action)}</span>
+                          <strong>{log.actor_name || log.actor_email || 'DBE'}</strong>
+                          <small>{dateTime(log.created_at)}</small>
+                        </article>
+                      )) : <div className="empty-box compact-empty">Sem alterações registradas ainda.</div>}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            )}
           </div>
           <ActionList compact items={[
             ['Criado em', dateTime(form.createdAt)],
@@ -1998,7 +2474,7 @@ function CronogramaConteudo({ state, addItem, updateItem }) {
             ['Origem', form.source || 'cronograma'],
           ]} />
           <div className="button-row">
-            <button className="secondary" onClick={() => setModalOpen(false)}>Cancelar</button>
+            <button className="secondary" onClick={() => { if (!contentFormDirty || window.confirm('Existem alteracoes nao salvas. Deseja fechar mesmo assim?')) closeContentModal() }}>Cancelar</button>
             <button className="primary" onClick={saveContent}><Check size={16} /> Salvar conteúdo</button>
           </div>
         </div>
@@ -2517,6 +2993,1031 @@ function Teleprompter({ state }) {
       )}
     </section>
   )
+}
+
+const APPROVAL_STATUS_CONFIG = {
+  pending: { label: 'Pendente', tone: 'gold' },
+  approved: { label: 'Aprovado', tone: 'success' },
+  requested_changes: { label: 'Ajustes solicitados', tone: 'danger' },
+}
+
+const CAMPAIGN_STATUSES = ['planning', 'active', 'in_approval', 'completed', 'paused']
+const CAMPAIGN_STATUS_LABELS = {
+  planning: 'Planejamento',
+  active: 'Ativa',
+  in_approval: 'Em aprovacao',
+  completed: 'Concluida',
+  paused: 'Pausada',
+}
+
+const TELEPROMPTER_SETTINGS_KEY = 'dbe_creator_tp_settings'
+const TELEPROMPTER_PRESETS_KEY = 'dbe_creator_tp_custom_presets'
+const QUICK_TEXT_ID = '__quick__'
+const DEFAULT_TP_SETTINGS = {
+  speed: 2,
+  fontSize: 48,
+  lineHeight: 1.5,
+  width: 80,
+  isMirrored: false,
+  enableCountdown: true,
+  textAlign: 'center',
+  theme: 'dark',
+  bgColor: '#000000',
+  textColor: '#ffffff',
+}
+const TELEPROMPTER_PRESETS = {
+  curto: { speed: 3, fontSize: 56, lineHeight: 1.2 },
+  aula: { speed: 1.5, fontSize: 42, lineHeight: 1.6 },
+  venda: { speed: 2.5, fontSize: 48, lineHeight: 1.4 },
+  podcast: { speed: 1.2, fontSize: 38, lineHeight: 1.8 },
+}
+
+function buildApprovalLink(token) {
+  return `${window.location.origin}/aprovacao/${encodeURIComponent(token)}`
+}
+
+function buildBatchApprovalLink(token) {
+  return `${window.location.origin}/aprovacao/lote/${encodeURIComponent(token)}`
+}
+
+function createApprovalToken(prefix = 'apv') {
+  const random = crypto.randomUUID ? crypto.randomUUID().replaceAll('-', '') : String(Date.now())
+  return `${prefix}_${random.slice(0, 24)}`
+}
+
+function addDaysIso(days) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString()
+}
+
+function scriptClientName(script, clients = []) {
+  const client = clients.find((item) => item.id === script.client_id) || clients.find((item) => item.name === script.client)
+  return script.client || script.client_name || client?.name || 'Cliente DBE'
+}
+
+function scriptApprovalText(script = {}) {
+  return [
+    script.title,
+    script.hook && `Gancho:\n${stripText(script.hook)}`,
+    script.body && `Desenvolvimento:\n${stripText(script.body)}`,
+    script.cta && `CTA:\n${stripText(script.cta)}`,
+    script.caption && `Legenda:\n${stripText(script.caption)}`,
+    script.notes && `Notas:\n${stripText(script.notes)}`,
+  ].filter(Boolean).join('\n\n')
+}
+
+function stripText(value = '') {
+  return String(value).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
+}
+
+function TeleprompterCreator({ state }) {
+  const scripts = state.scripts || []
+  const clients = state.clients || []
+  const [selectedClient, setSelectedClient] = useState('')
+  const visibleScripts = selectedClient ? scripts.filter((script) => scriptClientName(script, clients) === selectedClient) : scripts
+  const [selectedScriptId, setSelectedScriptId] = useState(QUICK_TEXT_ID)
+  const [quickText, setQuickText] = useState('')
+  const [isStarted, setIsStarted] = useState(false)
+  const [settings, setSettings] = useState(() => readJson(TELEPROMPTER_SETTINGS_KEY, DEFAULT_TP_SETTINGS))
+  const [customPresets, setCustomPresets] = useState(() => readJson(TELEPROMPTER_PRESETS_KEY, []))
+  const [presetName, setPresetName] = useState('')
+
+  useEffect(() => {
+    localStorage.setItem(TELEPROMPTER_SETTINGS_KEY, JSON.stringify(settings))
+  }, [settings])
+
+  useEffect(() => {
+    if (selectedScriptId !== QUICK_TEXT_ID && selectedScriptId !== 'all' && !visibleScripts.some((script) => script.id === selectedScriptId)) {
+      setSelectedScriptId(visibleScripts[0]?.id || QUICK_TEXT_ID)
+    }
+  }, [selectedClient])
+
+  const selectedScript = visibleScripts.find((script) => script.id === selectedScriptId)
+  const readerText = useMemo(() => {
+    if (selectedScriptId === QUICK_TEXT_ID) return quickText
+    if (selectedScriptId === 'all') return visibleScripts.map(scriptApprovalText).join('\n\n---\n\n')
+    return selectedScript ? scriptApprovalText(selectedScript) : ''
+  }, [quickText, selectedScript, selectedScriptId, visibleScripts])
+
+  const wordCount = readerText.trim() ? readerText.trim().split(/\s+/).length : 0
+  const updateSettings = (patch) => setSettings((prev) => ({ ...prev, ...patch }))
+  const saveCustomPreset = () => {
+    const name = presetName.trim() || `Preset ${customPresets.length + 1}`
+    const next = [{ name, settings }, ...customPresets.filter((item) => item.name !== name)].slice(0, 8)
+    setCustomPresets(next)
+    localStorage.setItem(TELEPROMPTER_PRESETS_KEY, JSON.stringify(next))
+    setPresetName('')
+  }
+
+  if (isStarted && readerText.trim()) {
+    return <TeleprompterReader text={readerText} settings={settings} updateSettings={updateSettings} onExit={() => setIsStarted(false)} autoStart />
+  }
+
+  return (
+    <section className="page-grid">
+      <div className="grid-2 align-start">
+        <div className="stack-list">
+          <Panel title="Conteudo de leitura">
+            <div className="form-grid">
+              <Select
+                label="Cliente"
+                value={selectedClient}
+                onChange={setSelectedClient}
+                options={[{ label: 'Todos', value: '' }, ...unique(scripts.map((script) => scriptClientName(script, clients))).map((name) => ({ label: name, value: name }))]}
+              />
+              <Select
+                label="Roteiro"
+                value={selectedScriptId}
+                onChange={setSelectedScriptId}
+                options={[
+                  { label: 'Texto rapido', value: QUICK_TEXT_ID },
+                  { label: 'Todos os roteiros filtrados', value: 'all' },
+                  ...visibleScripts.map((script) => ({ label: script.title || 'Sem titulo', value: script.id })),
+                ]}
+              />
+            </div>
+            <div className="mini-stat blue" style={{ marginTop: 12 }}>
+              <div className="mini-stat-head"><span>Estimativa</span><em className="mini-stat-icon"><Timer size={15} /></em></div>
+              <strong>{wordCount ? `${wordCount} palavras` : 'Sem texto'}</strong>
+            </div>
+          </Panel>
+
+          {selectedScriptId === QUICK_TEXT_ID ? (
+            <Panel title="Texto rapido">
+              <textarea className="textarea tp-quick-text" value={quickText} onChange={(event) => setQuickText(event.target.value)} placeholder="Cole o roteiro aqui..." />
+            </Panel>
+          ) : (
+            <Panel title="Preview">
+              <div className="tp-preview">{readerText || 'Selecione um roteiro para visualizar.'}</div>
+            </Panel>
+          )}
+        </div>
+
+        <Panel title="Configuracoes">
+          <div className="tp-settings">
+            <div>
+              <p className="field-caption">Presets rapidos</p>
+              <div className="button-row compact no-margin">
+                {Object.keys(TELEPROMPTER_PRESETS).map((key) => (
+                  <button key={key} className="secondary" onClick={() => updateSettings(TELEPROMPTER_PRESETS[key])}>{key}</button>
+                ))}
+              </div>
+            </div>
+            <div className="form-grid">
+              <Input label="Nome do preset" value={presetName} onChange={setPresetName} />
+              <label className="field">
+                <span>Salvar preset</span>
+                <button className="secondary" onClick={saveCustomPreset}><Save size={14} /> Salvar</button>
+              </label>
+            </div>
+            {customPresets.length > 0 && (
+              <div className="button-row compact no-margin">
+                {customPresets.map((preset) => <button key={preset.name} className="ghost" onClick={() => setSettings({ ...DEFAULT_TP_SETTINGS, ...preset.settings })}>{preset.name}</button>)}
+              </div>
+            )}
+            <RangeControl label="Velocidade" value={settings.speed} min={0.1} max={10} step={0.1} suffix="x" onChange={(speed) => updateSettings({ speed })} />
+            <RangeControl label="Fonte" value={settings.fontSize} min={20} max={120} suffix="px" onChange={(fontSize) => updateSettings({ fontSize })} />
+            <RangeControl label="Largura" value={settings.width} min={30} max={100} suffix="%" onChange={(width) => updateSettings({ width })} />
+            <RangeControl label="Altura de linha" value={settings.lineHeight} min={1.1} max={2.2} step={0.1} suffix="" onChange={(lineHeight) => updateSettings({ lineHeight })} />
+            <div className="grid-2">
+              <ToggleButton icon={FlipHorizontal} label="Espelhar" active={settings.isMirrored} onClick={() => updateSettings({ isMirrored: !settings.isMirrored })} />
+              <ToggleButton icon={Timer} label="Contagem" active={settings.enableCountdown} onClick={() => updateSettings({ enableCountdown: !settings.enableCountdown })} />
+            </div>
+            <div>
+              <p className="field-caption">Alinhamento</p>
+              <div className="button-row compact no-margin">
+                {[
+                  ['left', 'Esquerda', AlignLeft],
+                  ['center', 'Centro', AlignCenter],
+                  ['right', 'Direita', AlignRight],
+                  ['justify', 'Justificado', AlignJustify],
+                ].map(([value, label, Icon]) => (
+                  <button key={value} className={settings.textAlign === value ? 'primary' : 'secondary'} onClick={() => updateSettings({ textAlign: value })}>
+                    <Icon size={14} /> {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="button-row compact no-margin">
+              <button className={settings.theme === 'dark' ? 'primary' : 'secondary'} onClick={() => updateSettings({ theme: 'dark', bgColor: '#000000', textColor: '#ffffff' })}><Moon size={14} /> Escuro</button>
+              <button className={settings.theme === 'light' ? 'primary' : 'secondary'} onClick={() => updateSettings({ theme: 'light', bgColor: '#ffffff', textColor: '#111111' })}><Sun size={14} /> Claro</button>
+            </div>
+            <button className="primary" disabled={!readerText.trim()} onClick={() => setIsStarted(true)}><Play size={18} /> Iniciar leitura</button>
+          </div>
+        </Panel>
+      </div>
+    </section>
+  )
+}
+
+function TeleprompterReader({ text, settings, updateSettings, onExit, autoStart = false }) {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [scrollPos, setScrollPos] = useState(0)
+  const [showControls, setShowControls] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isRotated, setIsRotated] = useState(false)
+  const [countdown, setCountdown] = useState(null)
+  const [maxScroll, setMaxScroll] = useState(1)
+  const containerRef = useRef(null)
+  const textRef = useRef(null)
+  const frameRef = useRef(0)
+  const lastTimeRef = useRef(null)
+  const autoStartedRef = useRef(false)
+  const playingRef = useRef(false)
+  const settingsRef = useRef(settings)
+  const touchStartRef = useRef(null)
+  const touchInitialRef = useRef(0)
+
+  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0
+  const estimatedMinutes = Math.max(1, Math.ceil(wordCount / Math.max(90, 150 * Math.max(settings.speed, 0.5))))
+  const progress = Math.min(100, Math.max(0, (scrollPos / maxScroll) * 100))
+
+  useEffect(() => { playingRef.current = isPlaying }, [isPlaying])
+  useEffect(() => { settingsRef.current = settings }, [settings])
+  useEffect(() => {
+    const updateMax = () => setMaxScroll(Math.max(1, (textRef.current?.scrollHeight || 1) - window.innerHeight))
+    updateMax()
+    window.addEventListener('resize', updateMax)
+    return () => window.removeEventListener('resize', updateMax)
+  }, [text, settings.width, settings.fontSize, settings.lineHeight])
+
+  useEffect(() => {
+    const animate = (time) => {
+      if (lastTimeRef.current !== null && playingRef.current) {
+        const delta = time - lastTimeRef.current
+        const pixelsPerMs = (settingsRef.current.speed * 50) / 1000
+        setScrollPos((prev) => Math.min(prev + pixelsPerMs * delta, maxScroll + window.innerHeight * 0.5))
+      }
+      lastTimeRef.current = time
+      frameRef.current = requestAnimationFrame(animate)
+    }
+    lastTimeRef.current = null
+    frameRef.current = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(frameRef.current)
+  }, [maxScroll])
+
+  const start = useCallback(() => {
+    if (!settingsRef.current.enableCountdown) {
+      setIsPlaying(true)
+      return
+    }
+    setCountdown(3)
+    let next = 3
+    const interval = window.setInterval(() => {
+      next -= 1
+      if (next <= 0) {
+        window.clearInterval(interval)
+        setCountdown(null)
+        setIsPlaying(true)
+      } else {
+        setCountdown(next)
+      }
+    }, 700)
+  }, [])
+
+  useEffect(() => {
+    if (autoStart && !autoStartedRef.current) {
+      autoStartedRef.current = true
+      start()
+    }
+  }, [autoStart, start])
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') onExit()
+      if (event.code === 'Space') { event.preventDefault(); setIsPlaying((prev) => !prev) }
+      if (event.key === 'ArrowUp') setScrollPos((prev) => Math.max(0, prev - 150))
+      if (event.key === 'ArrowDown') setScrollPos((prev) => prev + 150)
+      if (event.key === '-') updateSettings({ speed: Math.max(0.1, settingsRef.current.speed - 0.5) })
+      if (event.key === '=' || event.key === '+') updateSettings({ speed: Math.min(10, settingsRef.current.speed + 0.5) })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onExit, updateSettings])
+
+  const togglePlay = () => {
+    if (countdown !== null) {
+      setCountdown(null)
+      return
+    }
+    if (playingRef.current) setIsPlaying(false)
+    else start()
+  }
+  const toggleFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen?.()
+      setIsFullscreen(true)
+    } else {
+      await document.exitFullscreen?.()
+      setIsFullscreen(false)
+    }
+  }
+  const reset = () => {
+    setScrollPos(0)
+    setIsPlaying(false)
+    setCountdown(null)
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={`tp-reader-shell${isRotated ? ' rotated' : ''}`}
+      style={{ backgroundColor: settings.bgColor, color: settings.textColor }}
+    >
+      <div className="tp-reader-progress"><span style={{ width: `${progress}%` }} /></div>
+      <div className="tp-reader-meta">
+        <span>{estimatedMinutes} min</span>
+        <span>{Math.round(progress)}%</span>
+      </div>
+      {countdown !== null && <div className="tp-countdown">{countdown}</div>}
+      <div className="tp-read-marker" />
+      <div
+        className="tp-reader-scroll"
+        onClick={togglePlay}
+        onTouchStart={(event) => { touchStartRef.current = event.touches[0].clientY; touchInitialRef.current = scrollPos; setIsPlaying(false) }}
+        onTouchMove={(event) => {
+          if (touchStartRef.current === null) return
+          setScrollPos(Math.max(0, touchInitialRef.current + (touchStartRef.current - event.touches[0].clientY) * 1.5))
+        }}
+        onTouchEnd={() => { touchStartRef.current = null }}
+      >
+        <div
+          ref={textRef}
+          className="tp-reader-text"
+          style={{
+            width: `${settings.width}%`,
+            fontSize: `${settings.fontSize}px`,
+            lineHeight: settings.lineHeight,
+            textAlign: settings.textAlign,
+            transform: `translateY(${-scrollPos}px) ${settings.isMirrored ? 'scaleX(-1)' : ''}`,
+          }}
+        >
+          {text}
+          <div className="tp-reader-end"><button onClick={(event) => { event.stopPropagation(); onExit() }}>Fim - voltar</button></div>
+        </div>
+      </div>
+      {showControls && (
+        <div className="tp-reader-controls">
+          <button onClick={reset} title="Reiniciar"><RotateCcw size={18} /></button>
+          <button onClick={() => updateSettings({ speed: Math.max(0.1, settings.speed - 0.5) })} title="Diminuir velocidade"><Minus size={18} /></button>
+          <button className="tp-play" onClick={togglePlay}>{isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}</button>
+          <button onClick={() => updateSettings({ speed: Math.min(10, settings.speed + 0.5) })} title="Aumentar velocidade"><Plus size={18} /></button>
+          <button className={settings.isMirrored ? 'active' : ''} onClick={() => updateSettings({ isMirrored: !settings.isMirrored })} title="Espelhar"><FlipHorizontal size={18} /></button>
+          <button onClick={toggleFullscreen} title="Tela cheia">{isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
+          <button className={isRotated ? 'active' : ''} onClick={() => setIsRotated((prev) => !prev)} title="Girar"><Smartphone size={18} /></button>
+          <button className="danger" onClick={onExit} title="Sair"><X size={18} /></button>
+          <span>{settings.speed.toFixed(1)}x | {settings.fontSize}px</span>
+        </div>
+      )}
+      <button className="tp-reader-toggle" onClick={() => setShowControls((prev) => !prev)}>
+        {showControls ? <EyeOff size={22} /> : <Eye size={22} />}
+      </button>
+    </div>
+  )
+}
+
+function RangeControl({ label, value, min, max, step = 1, suffix, onChange }) {
+  return (
+    <label className="range-control">
+      <span>{label}<strong>{Number(value).toFixed(step < 1 ? 1 : 0)}{suffix}</strong></span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    </label>
+  )
+}
+
+function ToggleButton({ icon: Icon, label, active, onClick }) {
+  return (
+    <button className={`toggle-row${active ? ' active' : ''}`} onClick={onClick}>
+      <span><Icon size={16} /> {label}</span>
+      <i />
+    </button>
+  )
+}
+
+function Campanhas({ state, addItem, updateItem, removeItem }) {
+  const campaigns = state.campaigns || []
+  const scripts = state.scripts || []
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [selectedId, setSelectedId] = useState(campaigns[0]?.id || '')
+  const [linkScriptId, setLinkScriptId] = useState('')
+  const [approvalLink, setApprovalLink] = useState('')
+  const empty = { title: '', description: '', goal: '', status: 'planning', start_date: '', end_date: '' }
+  const [form, setForm] = useState(empty)
+  const selected = campaigns.find((campaign) => campaign.id === selectedId) || campaigns[0]
+  const campaignScripts = selected ? scripts.filter((script) => script.campaign_id === selected.id) : []
+  const availableScripts = selected ? scripts.filter((script) => script.campaign_id !== selected.id) : scripts
+
+  useEffect(() => {
+    if (!selectedId && campaigns[0]?.id) setSelectedId(campaigns[0].id)
+  }, [campaigns, selectedId])
+
+  const openModal = (campaign = null) => {
+    setEditing(campaign)
+    setForm(campaign ? { ...empty, ...campaign } : empty)
+    setModalOpen(true)
+  }
+  const saveCampaign = async () => {
+    if (!form.title.trim()) return notify('Informe o nome da campanha.', 'warning')
+    if (editing) {
+      await updateItem('campaigns', editing.id, form)
+    } else {
+      const record = await addItem('campaigns', { ...form, created_at: new Date().toISOString() })
+      setSelectedId(record.id)
+    }
+    setModalOpen(false)
+  }
+  const linkScript = async () => {
+    if (!selected || !linkScriptId) return
+    await updateItem('scripts', linkScriptId, { campaign_id: selected.id })
+    setLinkScriptId('')
+  }
+  const sendCampaignToApproval = async () => {
+    if (!selected || campaignScripts.length === 0) return
+    const token = createApprovalToken('lot')
+    const batch = await addItem('approvalBatches', {
+      token,
+      campaign_id: selected.id,
+      title: selected.title,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      expires_at: addDaysIso(7),
+      items: campaignScripts.map((script) => ({ script_id: script.id, status: 'pending', comments: [] })),
+    })
+    await updateItem('campaigns', selected.id, { status: 'in_approval', approval_batch_id: batch.id })
+    await Promise.all(campaignScripts.map((script) => updateItem('scripts', script.id, { status: 'Aprovando' })))
+    setApprovalLink(buildBatchApprovalLink(token))
+  }
+
+  return (
+    <section className="page-grid">
+      <div className="grid-4">
+        <MiniStat label="Campanhas" value={campaigns.length} />
+        <MiniStat label="Ativas" value={campaigns.filter((item) => item.status === 'active').length} tone="success" />
+        <MiniStat label="Em aprovacao" value={campaigns.filter((item) => item.status === 'in_approval').length} tone="gold" />
+        <MiniStat label="Roteiros vinculados" value={scripts.filter((script) => script.campaign_id).length} tone="blue" />
+      </div>
+      <div className="grid-2 align-start">
+        <Panel title="Campanhas" action="Nova campanha" onAction={() => openModal()}>
+          <div className="campaign-grid">
+            {campaigns.map((campaign) => (
+              <article key={campaign.id} className={`campaign-card ${selected?.id === campaign.id ? 'active' : ''}`} onClick={() => { setSelectedId(campaign.id); setApprovalLink('') }}>
+                <div className="campaign-card-head">
+                  <Badge text={CAMPAIGN_STATUS_LABELS[campaign.status] || campaign.status} tone={campaign.status === 'active' ? 'success' : campaign.status === 'in_approval' ? 'gold' : 'default'} />
+                  <span>{scripts.filter((script) => script.campaign_id === campaign.id).length} roteiros</span>
+                </div>
+                <h3>{campaign.title}</h3>
+                <p>{campaign.description || campaign.goal || 'Sem descricao'}</p>
+                <div className="button-row compact">
+                  <button className="secondary" onClick={(event) => { event.stopPropagation(); openModal(campaign) }}><Pencil size={14} /> Editar</button>
+                  <button className="secondary danger-text" onClick={(event) => { event.stopPropagation(); removeItem('campaigns', campaign.id) }}><Trash2 size={14} /> Excluir</button>
+                </div>
+              </article>
+            ))}
+            {!campaigns.length && <div className="empty-box">Nenhuma campanha criada.</div>}
+          </div>
+        </Panel>
+        <Panel title={selected ? selected.title : 'Detalhes'}>
+          {selected ? (
+            <div className="stack-list">
+              <div className="inline-notice">
+                <strong>Objetivo:</strong> {selected.goal || 'Sem objetivo definido.'}
+              </div>
+              <div className="button-row">
+                <button className="primary" disabled={!campaignScripts.length} onClick={sendCampaignToApproval}><UserCheck size={16} /> Enviar campanha para aprovacao</button>
+              </div>
+              {approvalLink && (
+                <div className="approval-link-box">
+                  <strong>Link de aprovacao gerado</strong>
+                  <input readOnly value={approvalLink} />
+                  <button className="secondary" onClick={() => { copyText(approvalLink); notify('Link copiado.') }}><Copy size={14} /> Copiar</button>
+                </div>
+              )}
+              <div className="form-grid">
+                <Select label="Vincular roteiro" value={linkScriptId} onChange={setLinkScriptId} options={[{ label: 'Selecione...', value: '' }, ...availableScripts.map((script) => ({ label: script.title || 'Sem titulo', value: script.id }))]} />
+                <label className="field">
+                  <span>Acao</span>
+                  <button className="secondary" onClick={linkScript}><Plus size={14} /> Vincular</button>
+                </label>
+              </div>
+              {campaignScripts.map((script) => (
+                <article key={script.id} className="approval-script-row">
+                  <div>
+                    <strong>{script.title || 'Sem titulo'}</strong>
+                    <span>{scriptClientName(script, state.clients)} · {script.status || 'Sem status'}</span>
+                  </div>
+                  <button className="ghost" onClick={() => updateItem('scripts', script.id, { campaign_id: '' })}>Desvincular</button>
+                </article>
+              ))}
+              {!campaignScripts.length && <div className="empty-box">Nenhum roteiro nesta campanha.</div>}
+            </div>
+          ) : <div className="empty-box">Selecione ou crie uma campanha.</div>}
+        </Panel>
+      </div>
+      <Modal title={editing ? 'Editar campanha' : 'Nova campanha'} open={modalOpen} onClose={() => setModalOpen(false)}>
+        <div className="form-grid">
+          <Input label="Nome" value={form.title} onChange={(title) => setForm({ ...form, title })} />
+          <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={CAMPAIGN_STATUSES.map((status) => ({ value: status, label: CAMPAIGN_STATUS_LABELS[status] }))} />
+          <Input label="Inicio" type="date" value={form.start_date} onChange={(start_date) => setForm({ ...form, start_date })} />
+          <Input label="Fim" type="date" value={form.end_date} onChange={(end_date) => setForm({ ...form, end_date })} />
+          <label className="field span"><span>Descricao</span><textarea className="textarea" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+          <label className="field span"><span>Objetivo</span><textarea className="textarea" value={form.goal} onChange={(event) => setForm({ ...form, goal: event.target.value })} /></label>
+        </div>
+        <div className="button-row"><button className="secondary" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary" onClick={saveCampaign}>Salvar campanha</button></div>
+      </Modal>
+    </section>
+  )
+}
+
+function Aprovacoes({ state, addItem, updateItem, removeItem }) {
+  const scripts = state.scripts || []
+  const approvals = state.approvals || []
+  const batches = state.approvalBatches || []
+  const campaigns = state.campaigns || []
+  const [modalOpen, setModalOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [scriptId, setScriptId] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [generatedLink, setGeneratedLink] = useState('')
+  const [batchCampaignId, setBatchCampaignId] = useState('')
+  const [batchScriptIds, setBatchScriptIds] = useState([])
+
+  const createApproval = async () => {
+    const script = scripts.find((item) => item.id === scriptId)
+    if (!script) return notify('Selecione um roteiro.', 'warning')
+    const existing = approvals.find((item) => item.script_id === script.id && item.status === 'pending')
+    if (existing) {
+      const link = buildApprovalLink(existing.token)
+      setGeneratedLink(link)
+      copyText(link)
+      notify('Link existente copiado.')
+      return
+    }
+    const token = createApprovalToken('apv')
+    const approval = await addItem('approvals', {
+      token,
+      script_id: script.id,
+      client_name: clientName || scriptClientName(script, state.clients),
+      status: 'pending',
+      comments: [],
+      created_at: new Date().toISOString(),
+      expires_at: addDaysIso(7),
+    })
+    await updateItem('scripts', script.id, { status: 'Aprovando', approval_id: approval.id })
+    const link = buildApprovalLink(token)
+    setGeneratedLink(link)
+    copyText(link)
+    notify('Link de aprovacao gerado e copiado.')
+  }
+
+  const createBatch = async () => {
+    const campaign = campaigns.find((item) => item.id === batchCampaignId)
+    const scriptIds = batchCampaignId ? scripts.filter((script) => script.campaign_id === batchCampaignId).map((script) => script.id) : batchScriptIds
+    if (!scriptIds.length) return notify('Selecione roteiros para o lote.', 'warning')
+    const token = createApprovalToken('lot')
+    const batch = await addItem('approvalBatches', {
+      token,
+      campaign_id: batchCampaignId || '',
+      title: campaign?.title || `Lote de ${scriptIds.length} roteiros`,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      expires_at: addDaysIso(7),
+      items: scriptIds.map((id) => ({ script_id: id, status: 'pending', comments: [] })),
+    })
+    if (campaign) await updateItem('campaigns', campaign.id, { status: 'in_approval', approval_batch_id: batch.id })
+    await Promise.all(scriptIds.map((id) => updateItem('scripts', id, { status: 'Aprovando' })))
+    const link = buildBatchApprovalLink(token)
+    setGeneratedLink(link)
+    copyText(link)
+    setBatchOpen(false)
+    notify('Link do lote copiado.')
+  }
+
+  const toggleBatchScript = (id) => {
+    setBatchScriptIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id])
+  }
+
+  return (
+    <section className="page-grid">
+      <div className="grid-4">
+        <MiniStat label="Links individuais" value={approvals.length} />
+        <MiniStat label="Pendentes" value={approvals.filter((item) => item.status === 'pending').length} tone="gold" />
+        <MiniStat label="Aprovados" value={approvals.filter((item) => item.status === 'approved').length} tone="success" />
+        <MiniStat label="Lotes" value={batches.length} tone="blue" />
+      </div>
+      {generatedLink && (
+        <div className="approval-link-box">
+          <strong>Ultimo link gerado</strong>
+          <input readOnly value={generatedLink} />
+          <button className="secondary" onClick={() => { copyText(generatedLink); notify('Link copiado.') }}><Copy size={14} /> Copiar</button>
+        </div>
+      )}
+      <div className="button-row no-margin">
+        <button className="primary" onClick={() => setModalOpen(true)}><UserCheck size={16} /> Gerar link individual</button>
+        <button className="secondary" onClick={() => setBatchOpen(true)}><Megaphone size={16} /> Criar lote de aprovacao</button>
+      </div>
+      <div className="grid-2 align-start">
+        <Panel title="Aprovacoes individuais">
+          <div className="approval-list">
+            {approvals.map((approval) => {
+              const script = scripts.find((item) => item.id === approval.script_id)
+              const config = APPROVAL_STATUS_CONFIG[approval.status] || APPROVAL_STATUS_CONFIG.pending
+              const link = buildApprovalLink(approval.token)
+              return (
+                <article key={approval.id} className="approval-card">
+                  <div className="approval-card-top">
+                    <Badge text={config.label} tone={config.tone} />
+                    <button className="icon-btn" onClick={() => removeItem('approvals', approval.id)}><Trash2 size={14} /></button>
+                  </div>
+                  <h3>{script?.title || 'Roteiro removido'}</h3>
+                  <p>Para: <strong>{approval.client_name || scriptClientName(script, state.clients)}</strong></p>
+                  <div className="approval-url"><input readOnly value={link} /><button onClick={() => { copyText(link); notify('Link copiado.') }}><Copy size={14} /></button></div>
+                  <small>Criado em {dateTime(approval.created_at)} · expira em {dateTime(approval.expires_at)}</small>
+                  {(approval.comments || []).length > 0 && (
+                    <div className="approval-comments">
+                      {(approval.comments || []).map((comment) => <p key={comment.id || comment.created_at}><strong>{comment.author_name || 'Cliente'}:</strong> {comment.content}</p>)}
+                    </div>
+                  )}
+                </article>
+              )
+            })}
+            {!approvals.length && <div className="empty-box">Nenhum link individual gerado.</div>}
+          </div>
+        </Panel>
+        <Panel title="Lotes de aprovacao">
+          <div className="approval-list">
+            {batches.map((batch) => {
+              const approved = (batch.items || []).filter((item) => item.status === 'approved').length
+              const total = (batch.items || []).length
+              const link = buildBatchApprovalLink(batch.token)
+              return (
+                <article key={batch.id} className="approval-card">
+                  <div className="approval-card-top">
+                    <Badge text={APPROVAL_STATUS_CONFIG[batch.status]?.label || 'Pendente'} tone={APPROVAL_STATUS_CONFIG[batch.status]?.tone || 'gold'} />
+                    <button className="icon-btn" onClick={() => removeItem('approvalBatches', batch.id)}><Trash2 size={14} /></button>
+                  </div>
+                  <h3>{batch.title || 'Lote de aprovacao'}</h3>
+                  <p>{approved}/{total} aprovados</p>
+                  <div className="approval-progress"><span style={{ width: `${total ? (approved / total) * 100 : 0}%` }} /></div>
+                  <div className="approval-url"><input readOnly value={link} /><button onClick={() => { copyText(link); notify('Link copiado.') }}><Copy size={14} /></button></div>
+                </article>
+              )
+            })}
+            {!batches.length && <div className="empty-box">Nenhum lote criado.</div>}
+          </div>
+        </Panel>
+      </div>
+      <Modal title="Gerar link de aprovacao" open={modalOpen} onClose={() => setModalOpen(false)}>
+        <div className="form-grid">
+          <Select label="Roteiro" value={scriptId} onChange={(id) => { setScriptId(id); const script = scripts.find((item) => item.id === id); setClientName(script ? scriptClientName(script, state.clients) : '') }} options={[{ label: 'Selecione...', value: '' }, ...scripts.filter((script) => !['Aprovando', 'Aprovado', 'Postado'].includes(script.status)).map((script) => ({ label: `${script.title || 'Sem titulo'} · ${scriptClientName(script, state.clients)}`, value: script.id }))]} />
+          <Input label="Nome do cliente" value={clientName} onChange={setClientName} />
+        </div>
+        <p className="muted-note">Link valido por 7 dias. Qualquer pessoa com o link pode aprovar sem login.</p>
+        <div className="button-row"><button className="secondary" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary" onClick={createApproval}>Gerar link</button></div>
+      </Modal>
+      <Modal title="Criar lote de aprovacao" open={batchOpen} onClose={() => setBatchOpen(false)} wide>
+        <div className="form-grid">
+          <Select label="Campanha inteira" value={batchCampaignId} onChange={setBatchCampaignId} options={[{ label: 'Sem campanha: selecionar roteiros', value: '' }, ...campaigns.map((campaign) => ({ label: campaign.title, value: campaign.id }))]} />
+        </div>
+        {!batchCampaignId && (
+          <div className="approval-check-list">
+            {scripts.filter((script) => !['Aprovado', 'Postado'].includes(script.status)).map((script) => (
+              <label key={script.id}>
+                <input type="checkbox" checked={batchScriptIds.includes(script.id)} onChange={() => toggleBatchScript(script.id)} />
+                <span>{script.title || 'Sem titulo'} <small>{scriptClientName(script, state.clients)}</small></span>
+              </label>
+            ))}
+          </div>
+        )}
+        <p className="muted-note">O lote usa o caminho /aprovacao/lote/token e permite aprovar varios roteiros em uma pagina.</p>
+        <div className="button-row"><button className="secondary" onClick={() => setBatchOpen(false)}>Cancelar</button><button className="primary" onClick={createBatch}>Criar lote</button></div>
+      </Modal>
+    </section>
+  )
+}
+
+function MapaMercado({ state, addItem, updateItem }) {
+  const clients = state.clients || []
+  const maps = state.marketMaps || []
+  const [clientId, setClientId] = useState(clients[0]?.id || 'global')
+  const current = maps.find((item) => item.client_id === clientId) || null
+  const [step, setStep] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [competitor, setCompetitor] = useState({ name: '', strength: '' })
+  const [form, setForm] = useState({
+    client_id: clientId,
+    niche: '',
+    target_audience: '',
+    main_pain: '',
+    competitors: [],
+    differentiators: '',
+    tone_of_voice: '',
+    is_complete: false,
+    deby_insights: null,
+  })
+  const steps = [
+    ['Nicho', Map, 'Qual e o mercado?'],
+    ['Publico', Users, 'Para quem esse conteudo existe?'],
+    ['Dor', AlertCircle, 'Qual tensao faz parar o scroll?'],
+    ['Concorrentes', Swords, 'Quem ocupa espaco no mesmo mercado?'],
+    ['Diferenciais', Star, 'O que sustenta a autoridade?'],
+    ['Tom de voz', Mic, 'Como a marca deve soar?'],
+  ]
+
+  useEffect(() => {
+    const record = maps.find((item) => item.client_id === clientId)
+    setForm(record ? { ...form, ...record, client_id: clientId } : { client_id: clientId, niche: '', target_audience: '', main_pain: '', competitors: [], differentiators: '', tone_of_voice: '', is_complete: false, deby_insights: null })
+    setStep(0)
+  }, [clientId, maps.length])
+
+  const saveMap = async (complete = false, insights = form.deby_insights) => {
+    const payload = { ...form, client_id: clientId, is_complete: complete || form.is_complete, deby_insights: insights, updated_at: new Date().toISOString() }
+    if (current?.id) await updateItem('marketMaps', current.id, payload)
+    else await addItem('marketMaps', { ...payload, created_at: new Date().toISOString() })
+    setForm(payload)
+  }
+  const fillWithDeby = async () => {
+    if (!form.niche.trim()) return notify('Informe o nicho antes de preencher com Deby.', 'warning')
+    setBusy(true)
+    const prompt = `Preencha um mapa de mercado para este nicho: ${form.niche}. Retorne publico, dor, diferenciais, tom de voz e 3 concorrentes provaveis.`
+    const result = await ai.ask('default', prompt, 'DBE Flow - mapa de mercado para conteudo e campanhas.')
+    setBusy(false)
+    const fallback = buildMarketMapSuggestions(form.niche)
+    setForm((prev) => ({ ...prev, ...fallback, deby_notes: result.ok ? result.text : fallback.deby_notes }))
+  }
+  const finishMap = async () => {
+    setBusy(true)
+    const prompt = `Analise este mapa de mercado e gere oportunidades de conteudo, angulos, riscos e CTAs:\n${JSON.stringify(form, null, 2)}`
+    const result = await ai.ask('analise', prompt, 'Use linguagem objetiva para planejamento de conteudo DBE.')
+    const insights = result.ok ? { summary: result.text, generated_at: new Date().toISOString() } : buildMarketInsights(form)
+    await saveMap(true, insights)
+    setBusy(false)
+    notify('Mapa de mercado salvo.')
+  }
+  const addCompetitor = () => {
+    if (!competitor.name.trim()) return
+    setForm((prev) => ({ ...prev, competitors: [...(prev.competitors || []), competitor] }))
+    setCompetitor({ name: '', strength: '' })
+  }
+
+  return (
+    <section className="page-grid market-map-page">
+      <Panel title="Mapa de Mercado">
+        <div className="form-grid">
+          <Select label="Cliente" value={clientId} onChange={setClientId} options={[{ label: 'Workspace DBE', value: 'global' }, ...clients.map((client) => ({ label: client.name, value: client.id }))]} />
+        </div>
+        <div className="market-steps">
+          {steps.map(([label, Icon], index) => (
+            <button key={label} className={index === step ? 'active' : index < step ? 'done' : ''} onClick={() => setStep(index)}>
+              {index < step ? <Check size={16} /> : <Icon size={16} />}
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="market-card">
+          <p className="eyebrow">Passo {step + 1} de {steps.length}</p>
+          <h2>{steps[step][0]}</h2>
+          <p>{steps[step][2]}</p>
+          {step === 0 && (
+            <div className="stack-list">
+              <Input label="Nicho de mercado" value={form.niche} onChange={(niche) => setForm({ ...form, niche })} />
+              <button className="secondary" onClick={fillWithDeby} disabled={busy}><Wand2 size={14} /> Preencher com Deby</button>
+            </div>
+          )}
+          {step === 1 && <label className="field"><span>Publico-alvo ideal</span><textarea className="textarea" value={form.target_audience} onChange={(event) => setForm({ ...form, target_audience: event.target.value })} /></label>}
+          {step === 2 && <label className="field"><span>Dor principal</span><textarea className="textarea" value={form.main_pain} onChange={(event) => setForm({ ...form, main_pain: event.target.value })} /></label>}
+          {step === 3 && (
+            <div className="stack-list">
+              <div className="form-grid">
+                <Input label="Concorrente" value={competitor.name} onChange={(name) => setCompetitor({ ...competitor, name })} />
+                <Input label="Ponto forte" value={competitor.strength} onChange={(strength) => setCompetitor({ ...competitor, strength })} />
+              </div>
+              <button className="secondary" onClick={addCompetitor}><Plus size={14} /> Adicionar concorrente</button>
+              {(form.competitors || []).map((item, index) => (
+                <div className="profile-info-row" key={`${item.name}-${index}`}>
+                  <strong>{item.name}</strong><span>{item.strength || 'Sem ponto forte'}</span>
+                  <button className="ghost" onClick={() => setForm({ ...form, competitors: form.competitors.filter((_, i) => i !== index) })}>Remover</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {step === 4 && <label className="field"><span>Diferenciais</span><textarea className="textarea" value={form.differentiators} onChange={(event) => setForm({ ...form, differentiators: event.target.value })} /></label>}
+          {step === 5 && (
+            <div className="stack-list">
+              <div className="tone-grid">
+                {['Descontraido', 'Serio e tecnico', 'Inspiracional', 'Provocativo', 'Educativo', 'Empatico'].map((tone) => (
+                  <button key={tone} className={form.tone_of_voice === tone ? 'active' : ''} onClick={() => setForm({ ...form, tone_of_voice: tone })}>{tone}</button>
+                ))}
+              </div>
+              <Input label="Tom personalizado" value={form.tone_of_voice} onChange={(tone_of_voice) => setForm({ ...form, tone_of_voice })} />
+            </div>
+          )}
+          <div className="button-row">
+            {step > 0 && <button className="ghost" onClick={() => setStep(step - 1)}><ChevronLeft size={14} /> Voltar</button>}
+            <button className="secondary" onClick={() => saveMap(false)}><Save size={14} /> Salvar progresso</button>
+            {step < steps.length - 1 ? <button className="primary" onClick={() => setStep(step + 1)}>Proximo <ChevronRight size={14} /></button> : <button className="primary" onClick={finishMap} disabled={busy}><Check size={14} /> Finalizar mapa</button>}
+          </div>
+        </div>
+      </Panel>
+      {form.is_complete && <div className="inline-notice success"><strong>Mapa completo.</strong> A Deby usa esta base para roteiros, campanhas e aprovacoes.</div>}
+      {form.deby_insights && (
+        <Panel title="Insights Deby">
+          <div className="tp-preview">{form.deby_insights.summary || JSON.stringify(form.deby_insights, null, 2)}</div>
+        </Panel>
+      )}
+    </section>
+  )
+}
+
+function PublicApprovalPage({ token }) {
+  const [approval, setApproval] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [comment, setComment] = useState('')
+  const [author, setAuthor] = useState('')
+  const [error, setError] = useState('')
+
+  const loadApproval = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(`/.netlify/functions/public-approval?token=${encodeURIComponent(token)}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Link invalido.')
+      setApproval(json.approval)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => { loadApproval() }, [loadApproval])
+  const sendReview = async (action) => {
+    setError('')
+    try {
+      const res = await fetch('/.netlify/functions/public-approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action, comment, author_name: author }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Nao foi possivel salvar.')
+      setApproval(json.approval)
+      setComment('')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+  return <PublicApprovalShell loading={loading} error={error} approval={approval} comment={comment} setComment={setComment} author={author} setAuthor={setAuthor} onApprove={() => sendReview('approve')} onChanges={() => sendReview('request_changes')} />
+}
+
+function PublicBatchApprovalPage({ token }) {
+  const [batch, setBatch] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [comment, setComment] = useState('')
+  const [author, setAuthor] = useState('')
+  const [error, setError] = useState('')
+
+  const loadBatch = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(`/.netlify/functions/public-batch-approval?token=${encodeURIComponent(token)}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Link invalido.')
+      setBatch(json.batch)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => { loadBatch() }, [loadBatch])
+  const sendReview = async (action, scriptId = null) => {
+    setError('')
+    try {
+      const res = await fetch('/.netlify/functions/public-batch-approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action, script_id: scriptId, comment, author_name: author }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Nao foi possivel salvar.')
+      setBatch(json.batch)
+      setComment('')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  return (
+    <div className="public-approval-page">
+      <img src={logo} alt="DBE" />
+      {loading && <div className="public-card">Carregando aprovacao...</div>}
+      {error && <div className="public-card error">{error}</div>}
+      {!loading && batch && (
+        <div className="public-card wide">
+          <Badge text={APPROVAL_STATUS_CONFIG[batch.status]?.label || 'Pendente'} tone={APPROVAL_STATUS_CONFIG[batch.status]?.tone || 'gold'} />
+          <h1>{batch.title || 'Lote de aprovacao'}</h1>
+          <p>Revise os roteiros abaixo e aprove individualmente ou o lote inteiro.</p>
+          <div className="form-grid">
+            <Input label="Seu nome" value={author} onChange={setAuthor} />
+            <label className="field"><span>Comentario geral</span><textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
+          </div>
+          <div className="public-script-list">
+            {(batch.items || []).map((item) => (
+              <article key={item.script_id}>
+                <Badge text={APPROVAL_STATUS_CONFIG[item.status]?.label || 'Pendente'} tone={APPROVAL_STATUS_CONFIG[item.status]?.tone || 'gold'} />
+                <h2>{item.script?.title || 'Roteiro'}</h2>
+                <pre>{scriptApprovalText(item.script)}</pre>
+                <div className="button-row">
+                  <button className="secondary" onClick={() => sendReview('request_changes', item.script_id)}>Pedir ajustes</button>
+                  <button className="primary" onClick={() => sendReview('approve', item.script_id)}><Check size={16} /> Aprovar</button>
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="button-row">
+            <button className="secondary" onClick={() => sendReview('request_changes')}>Pedir ajustes no lote</button>
+            <button className="primary" onClick={() => sendReview('approve')}><Check size={16} /> Aprovar lote inteiro</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PublicApprovalShell({ loading, error, approval, comment, setComment, author, setAuthor, onApprove, onChanges }) {
+  if (loading) return <div className="public-approval-page"><img src={logo} alt="DBE" /><div className="public-card">Carregando aprovacao...</div></div>
+  if (error) return <div className="public-approval-page"><img src={logo} alt="DBE" /><div className="public-card error">{error}</div></div>
+  if (!approval) return null
+  const config = APPROVAL_STATUS_CONFIG[approval.status] || APPROVAL_STATUS_CONFIG.pending
+  return (
+    <div className="public-approval-page">
+      <img src={logo} alt="DBE" />
+      <div className="public-card">
+        <Badge text={config.label} tone={config.tone} />
+        <h1>{approval.script?.title || 'Conteudo para aprovacao'}</h1>
+        <p>Cliente: <strong>{approval.client_name || 'Cliente DBE'}</strong></p>
+        <pre>{scriptApprovalText(approval.script)}</pre>
+        {(approval.comments || []).length > 0 && (
+          <div className="approval-comments">
+            {(approval.comments || []).map((item) => <p key={item.id || item.created_at}><strong>{item.author_name || 'Cliente'}:</strong> {item.content}</p>)}
+          </div>
+        )}
+        {approval.status === 'pending' ? (
+          <>
+            <div className="form-grid">
+              <Input label="Seu nome" value={author} onChange={setAuthor} />
+              <label className="field"><span>Comentario ou ajustes</span><textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
+            </div>
+            <div className="button-row">
+              <button className="secondary" onClick={onChanges}>Pedir ajustes</button>
+              <button className="primary" onClick={onApprove}><Check size={16} /> Aprovar</button>
+            </div>
+          </>
+        ) : (
+          <div className="inline-notice success">Esta aprovacao ja foi revisada.</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function readJson(key, fallback) {
+  try {
+    const stored = localStorage.getItem(key)
+    if (!stored) return fallback
+    const parsed = JSON.parse(stored)
+    if (Array.isArray(fallback)) return Array.isArray(parsed) ? parsed : fallback
+    return { ...fallback, ...parsed }
+  } catch {
+    return fallback
+  }
+}
+
+function buildMarketMapSuggestions(niche) {
+  return {
+    target_audience: `Pessoas que ja sentem a dor central de ${niche}, mas ainda nao tem clareza de criterio para decidir.`,
+    main_pain: `A dificuldade principal e transformar interesse em decisao porque o publico nao entende valor, risco e proximo passo.`,
+    competitors: [
+      { name: 'Concorrente direto', strength: 'Alta frequencia de conteudo' },
+      { name: 'Especialista autoridade', strength: 'Prova de metodo' },
+      { name: 'Oferta barata', strength: 'Preco e promessa simples' },
+    ],
+    differentiators: 'Metodo DBE, clareza de posicionamento, prova de criterio e comunicacao sem promessa vazia.',
+    tone_of_voice: 'Educativo, direto e estrategico',
+    deby_notes: 'Sugestao local gerada quando a IA nao responde.',
+  }
+}
+
+function buildMarketInsights(form) {
+  return {
+    summary: `Oportunidade: posicionar ${form.niche || 'o nicho'} com foco em dor percebida, criterio de escolha e prova de metodo.\n\nAngulos:\n- Erros comuns que travam a decisao\n- Bastidores do metodo\n- Comparativos eticos contra alternativas fracas\n\nRiscos:\n- Conteudo generico demais\n- Promessa sem sustentacao\n- CTA sem proximo passo claro`,
+    generated_at: new Date().toISOString(),
+  }
 }
 
 function DebyAI({ state, addItem, updateItem }) {
@@ -4511,7 +6012,7 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
     persistTeamMembers(m)
   }
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     if (!name.trim()) {
       setProfileMsg('Informe um nome de exibicao.')
       notify('Informe um nome de exibicao.', 'danger')
@@ -4527,7 +6028,7 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
       const exists = nextMembers.some((member) => member.email.toLowerCase() === updated.email.toLowerCase())
       const finalMembers = exists ? nextMembers : [...nextMembers, updated]
       saveMembers(finalMembers)
-      onProfileUpdate(updated)
+      await onProfileUpdate(updated)
       setProfileMsg('Perfil salvo com sucesso.')
       notify('Perfil salvo com sucesso.', 'success')
     } catch (err) {
@@ -4539,13 +6040,20 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
     }
   }
 
-  const changePassword = () => {
-    if (pass !== AUTH_PASS) { setPassMsg('Senha atual incorreta'); return }
+  const changePassword = async () => {
+    if (!isSupabaseConfigured) { setPassMsg('Senha local desativada. Configure o Supabase Auth para gerenciar usuarios.'); return }
     if (newPass.length < 6) { setPassMsg('Nova senha precisa ter ao menos 6 caracteres'); return }
-    setPassMsg('✅ Senha alterada localmente. Esta versão usa senha compartilhada da equipe.')
+    const { error } = await supabase.auth.updateUser({ password: newPass })
+    if (error) { setPassMsg(error.message || 'Nao foi possivel alterar a senha'); return }
+    setPass('')
+    setNewPass('')
+    setPassMsg('Senha alterada com sucesso.')
+    return
   }
 
   const addMember = () => {
+    setMemberMsg('Convites locais foram desativados. Crie o usuario no Supabase Auth; a migration vincula ao workspace padrao no primeiro acesso.')
+    return
     if (!newMemberEmail || !newMemberName) { setMemberMsg('Preencha nome e e-mail'); return }
     if (newMemberRole === 'editor' && !newMemberPass) { setMemberMsg('Defina uma senha para o editor'); return }
     const exists = members.find(m => m.email === newMemberEmail)
@@ -4558,6 +6066,8 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
   }
 
   const removeMember = (email) => {
+    setMemberMsg(email === currentUser?.email ? 'Nao e possivel remover a si mesmo.' : 'Remova ou bloqueie este usuario no Supabase Auth/workspace_members.')
+    return
     if (email === currentUser?.email) { setMemberMsg('Não é possível remover a si mesmo'); return }
     saveMembers(members.filter(m => m.email !== email))
   }
@@ -4844,14 +6354,18 @@ function Panel({ title, action, onAction, children }) {
   )
 }
 
-function Modal({ title, open, onClose, children, wide = false }) {
+function Modal({ title, open, onClose, children, wide = false, confirmOnClose = false, confirmMessage = 'Existem alteracoes nao salvas. Deseja fechar mesmo assim?' }) {
   if (!open) return null
+  const requestClose = () => {
+    if (confirmOnClose && !window.confirm(confirmMessage)) return
+    onClose()
+  }
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}>
       <section className={wide ? 'modal-panel wide' : 'modal-panel'}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose}>×</button>
+          <button className="icon-btn" onClick={requestClose}>×</button>
         </div>
         {children}
       </section>
@@ -5255,6 +6769,16 @@ function reviewLabel(status) {
     commented: 'Comentado',
   }
   return labels[status] || ''
+}
+
+function activityLabel(action) {
+  const labels = {
+    create: 'Criou',
+    update: 'Atualizou',
+    delete: 'Excluiu',
+    comment: 'Comentou',
+  }
+  return labels[action] || action || 'Alterou'
 }
 
 function copyText(text) {
