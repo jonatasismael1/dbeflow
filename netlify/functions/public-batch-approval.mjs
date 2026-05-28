@@ -9,22 +9,22 @@ const headers = {
 
 export default async (req) => {
   try {
-    if (!SB_URL || !SB_KEY) return json({ error: 'Supabase nao configurado no servidor.' }, 500)
+    if (!SB_URL || !SB_KEY) return json({ error: 'Supabase não configurado no servidor.' }, 500)
     const url = new URL(req.url)
 
     if (req.method === 'GET') {
       const token = url.searchParams.get('token')
-      if (!token) return json({ error: 'Token de aprovacao nao informado.' }, 400)
+      if (!token) return json({ error: 'Token de aprovação não informado.' }, 400)
       return json({ batch: await getBatch(token) })
     }
 
-    if (req.method !== 'POST') return json({ error: 'Metodo nao permitido.' }, 405)
+    if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
 
     const body = await req.json().catch(() => ({}))
     const token = body.token
     const action = body.action
-    if (!token) return json({ error: 'Token de aprovacao nao informado.' }, 400)
-    if (!['approve', 'request_changes'].includes(action)) return json({ error: 'Acao invalida.' }, 400)
+    if (!token) return json({ error: 'Token de aprovação não informado.' }, 400)
+    if (!['approve', 'request_changes'].includes(action)) return json({ error: 'Ação inválida.' }, 400)
 
     const batch = await getBatch(token, false)
     const status = action === 'approve' ? 'approved' : 'requested_changes'
@@ -64,17 +64,17 @@ export default async (req) => {
     await Promise.all(affectedIds.map((id) => updateScriptStatus(id, status === 'approved' ? 'Aprovado' : 'Aprovando')))
     return json({ batch: await enrichBatch(next) })
   } catch (err) {
-    return json({ error: err.message || 'Erro no lote de aprovacao.' }, err.status || 500)
+    return json({ error: err.message || 'Erro no lote de aprovação.' }, err.status || 500)
   }
 }
 
 async function getBatch(token, enriched = true) {
   const rows = await restGet(`dbe_approval_batches?select=id,data&${encodeURIComponent('data->>token')}=eq.${encodeURIComponent(token)}&limit=1`)
   const row = rows?.[0]
-  if (!row) throw Object.assign(new Error('Link de aprovacao invalido.'), { status: 404 })
+  if (!row) throw Object.assign(new Error('Link de aprovação inválido.'), { status: 404 })
   const batch = { id: row.id, ...(row.data || {}) }
   if (batch.expires_at && new Date(batch.expires_at) < new Date() && batch.status === 'pending') {
-    throw Object.assign(new Error('Este link de aprovacao expirou.'), { status: 410 })
+    throw Object.assign(new Error('Este link de aprovação expirou.'), { status: 410 })
   }
   return enriched ? enrichBatch(batch) : batch
 }

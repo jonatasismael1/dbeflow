@@ -106,16 +106,16 @@ const USERS = [
 const ENTITY_LABELS = {
   clients: 'Cliente',
   leads: 'Lead',
-  scripts: 'Conteudo',
+  scripts: 'Conteúdo',
   posts: 'Post',
-  invoices: 'Cobranca',
-  automations: 'Automacao',
+  invoices: 'Cobrança',
+  automations: 'Automação',
   contracts: 'Contrato',
-  diagnostics: 'Diagnostico',
+  diagnostics: 'Diagnóstico',
   briefings: 'Jornada',
   campaigns: 'Campanha',
-  approvals: 'Aprovacao',
-  approvalBatches: 'Lote de aprovacao',
+  approvals: 'Aprovação',
+  approvalBatches: 'Lote de aprovação',
   marketMaps: 'Mapa de mercado',
 }
 
@@ -222,10 +222,10 @@ async function resolveSupabaseUser(session) {
 function resizeAvatarFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem.'))
+    reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'))
     reader.onload = () => {
       const img = new Image()
-      img.onerror = () => reject(new Error('Arquivo de imagem invalido.'))
+      img.onerror = () => reject(new Error('Arquivo de imagem inválido.'))
       img.onload = () => {
         const sourceSize = Math.min(img.width, img.height)
         const sourceX = Math.max(0, (img.width - sourceSize) / 2)
@@ -235,7 +235,7 @@ function resizeAvatarFile(file) {
         canvas.height = AVATAR_OUTPUT_SIZE
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          reject(new Error('Nao foi possivel preparar a imagem.'))
+          reject(new Error('Não foi possível preparar a imagem.'))
           return
         }
         ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE)
@@ -276,24 +276,24 @@ const nav = [
 const MOBILE_NAV = ['cronograma', 'calendario', 'financeiro', 'conversas']
 
 const pageDescriptions = {
-  dashboard: 'Visao executiva da operacao, receita e proximas prioridades.',
-  cronograma: 'Planejamento de conteudo por cliente, formato e status.',
-  calendario: 'Agenda editorial para edicao, capa e postagem.',
-  teleprompter: 'Leitura guiada para gravacoes e roteiros aprovados.',
-  campanhas: 'Agrupe conteudos por objetivo, campanha e fase de aprovacao.',
-  aprovacoes: 'Links publicos de revisao, comentarios e aprovacao de roteiros.',
-  mercado: 'Mapa de mercado estrategico usado como base para conteudo e campanhas.',
-  producao: 'Pastas, projetos e revisoes de video no Google Drive.',
-  clientes: 'Carteira ativa, dados operacionais e historico de cada cliente.',
+  dashboard: 'Visão executiva da operação, receita e próximas prioridades.',
+  cronograma: 'Planejamento de conteúdo por cliente, formato e status.',
+  calendario: 'Agenda editorial para edição, capa e postagem.',
+  teleprompter: 'Leitura guiada para gravações e roteiros aprovados.',
+  campanhas: 'Agrupe conteúdos por objetivo, campanha e fase de aprovação.',
+  aprovacoes: 'Links públicos de revisão, comentários e aprovação de roteiros.',
+  mercado: 'Mapa de mercado estratégico usado como base para conteúdo e campanhas.',
+  producao: 'Pastas, projetos e revisões de vídeo no Google Drive.',
+  clientes: 'Carteira ativa, dados operacionais e histórico de cada cliente.',
   conversas: 'Central de relacionamento e respostas pelo WhatsApp.',
-  instagram: 'Indicadores de performance e leitura de conteudos publicados.',
+  instagram: 'Indicadores de performance e leitura de conteúdos publicados.',
   financeiro: 'Receitas, despesas, contas e resultado mensal.',
   crm: 'Pipeline comercial e leads em acompanhamento.',
-  onboarding: 'Jornadas, pendencias e progresso de novos clientes.',
+  onboarding: 'Jornadas, pendências e progresso de novos clientes.',
   diagnostico: 'Raio-X de posicionamento e oportunidades comerciais.',
   ai: 'Assistente para ideias, respostas e apoio operacional.',
-  contratos: 'Geracao e envio de contratos oficiais DBE.',
-  configuracoes: 'Preferencias, equipe, integracoes e tema visual.',
+  contratos: 'Geração e envio de contratos oficiais DBE.',
+  configuracoes: 'Preferências, equipe, integrações e tema visual.',
 }
 
 const seed = {
@@ -411,7 +411,7 @@ function App() {
         if (!alive) return
         await hydrateAuthSession(data.session)
       })
-      .catch((err) => console.warn('[auth] sessao', err.message))
+      .catch((err) => console.warn('[auth] sessão', err.message))
       .finally(() => { if (alive) setAuthLoading(false) })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -542,7 +542,7 @@ function App() {
   // Remove: tira do estado + apaga no banco
   const removeItem = async (key, id) => {
     const label = ENTITY_LABELS[key] || 'registro'
-    if (!window.confirm(`Excluir este ${label.toLowerCase()}? Esta acao nao pode ser desfeita.`)) return false
+    if (!window.confirm(`Excluir este ${label.toLowerCase()}? Esta ação não pode ser desfeita.`)) return false
     let removed = null
     setState((cur) => {
       const rows = cur[key] || []
@@ -612,7 +612,7 @@ function App() {
       <div className="login-page">
         <div className="login-card">
           <img src={logo} alt="DBE" className="login-logo" />
-          <p className="login-sub">Verificando sessao...</p>
+          <p className="login-sub">Verificando sessão...</p>
         </div>
       </div>
     )
@@ -785,7 +785,7 @@ function LoginPage({ onLogin }) {
       const result = await onLogin({ email: email.trim(), password: pass })
       if (!result?.ok) setError(result?.error || 'E-mail ou senha incorretos')
     } catch (err) {
-      setError(err.message || 'Nao foi possivel entrar')
+      setError(err.message || 'Não foi possível entrar')
     } finally {
       setBusy(false)
     }
@@ -1913,9 +1913,9 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
       setCommentDraft('')
       const logs = await loadActivityLogs('scripts', editing.id)
       setActivityLogs(logs)
-      notify('Comentario salvo no conteudo.', 'success')
+      notify('Comentário salvo no conteúdo.', 'success')
     } catch (err) {
-      notify(`Erro ao salvar comentario: ${err.message}`, 'danger')
+      notify(`Erro ao salvar comentário: ${err.message}`, 'danger')
     }
   }
 
@@ -2474,7 +2474,7 @@ function CronogramaConteudo({ state, addItem, updateItem, currentUser }) {
             ['Origem', form.source || 'cronograma'],
           ]} />
           <div className="button-row">
-            <button className="secondary" onClick={() => { if (!contentFormDirty || window.confirm('Existem alteracoes nao salvas. Deseja fechar mesmo assim?')) closeContentModal() }}>Cancelar</button>
+            <button className="secondary" onClick={() => { if (!contentFormDirty || window.confirm('Existem alterações não salvas. Deseja fechar mesmo assim?')) closeContentModal() }}>Cancelar</button>
             <button className="primary" onClick={saveContent}><Check size={16} /> Salvar conteúdo</button>
           </div>
         </div>
@@ -3005,8 +3005,8 @@ const CAMPAIGN_STATUSES = ['planning', 'active', 'in_approval', 'completed', 'pa
 const CAMPAIGN_STATUS_LABELS = {
   planning: 'Planejamento',
   active: 'Ativa',
-  in_approval: 'Em aprovacao',
-  completed: 'Concluida',
+  in_approval: 'Em aprovação',
+  completed: 'Concluída',
   paused: 'Pausada',
 }
 
@@ -3118,7 +3118,7 @@ function TeleprompterCreator({ state }) {
     <section className="page-grid">
       <div className="grid-2 align-start">
         <div className="stack-list">
-          <Panel title="Conteudo de leitura">
+          <Panel title="Conteúdo de leitura">
             <div className="form-grid">
               <Select
                 label="Cliente"
@@ -3131,9 +3131,9 @@ function TeleprompterCreator({ state }) {
                 value={selectedScriptId}
                 onChange={setSelectedScriptId}
                 options={[
-                  { label: 'Texto rapido', value: QUICK_TEXT_ID },
+                  { label: 'Texto rápido', value: QUICK_TEXT_ID },
                   { label: 'Todos os roteiros filtrados', value: 'all' },
-                  ...visibleScripts.map((script) => ({ label: script.title || 'Sem titulo', value: script.id })),
+                  ...visibleScripts.map((script) => ({ label: script.title || 'Sem título', value: script.id })),
                 ]}
               />
             </div>
@@ -3144,7 +3144,7 @@ function TeleprompterCreator({ state }) {
           </Panel>
 
           {selectedScriptId === QUICK_TEXT_ID ? (
-            <Panel title="Texto rapido">
+            <Panel title="Texto rápido">
               <textarea className="textarea tp-quick-text" value={quickText} onChange={(event) => setQuickText(event.target.value)} placeholder="Cole o roteiro aqui..." />
             </Panel>
           ) : (
@@ -3154,10 +3154,10 @@ function TeleprompterCreator({ state }) {
           )}
         </div>
 
-        <Panel title="Configuracoes">
+        <Panel title="Configurações">
           <div className="tp-settings">
             <div>
-              <p className="field-caption">Presets rapidos</p>
+              <p className="field-caption">Presets rápidos</p>
               <div className="button-row compact no-margin">
                 {Object.keys(TELEPROMPTER_PRESETS).map((key) => (
                   <button key={key} className="secondary" onClick={() => updateSettings(TELEPROMPTER_PRESETS[key])}>{key}</button>
@@ -3455,7 +3455,7 @@ function Campanhas({ state, addItem, updateItem, removeItem }) {
       <div className="grid-4">
         <MiniStat label="Campanhas" value={campaigns.length} />
         <MiniStat label="Ativas" value={campaigns.filter((item) => item.status === 'active').length} tone="success" />
-        <MiniStat label="Em aprovacao" value={campaigns.filter((item) => item.status === 'in_approval').length} tone="gold" />
+        <MiniStat label="Em aprovação" value={campaigns.filter((item) => item.status === 'in_approval').length} tone="gold" />
         <MiniStat label="Roteiros vinculados" value={scripts.filter((script) => script.campaign_id).length} tone="blue" />
       </div>
       <div className="grid-2 align-start">
@@ -3468,7 +3468,7 @@ function Campanhas({ state, addItem, updateItem, removeItem }) {
                   <span>{scripts.filter((script) => script.campaign_id === campaign.id).length} roteiros</span>
                 </div>
                 <h3>{campaign.title}</h3>
-                <p>{campaign.description || campaign.goal || 'Sem descricao'}</p>
+                <p>{campaign.description || campaign.goal || 'Sem descrição'}</p>
                 <div className="button-row compact">
                   <button className="secondary" onClick={(event) => { event.stopPropagation(); openModal(campaign) }}><Pencil size={14} /> Editar</button>
                   <button className="secondary danger-text" onClick={(event) => { event.stopPropagation(); removeItem('campaigns', campaign.id) }}><Trash2 size={14} /> Excluir</button>
@@ -3485,26 +3485,26 @@ function Campanhas({ state, addItem, updateItem, removeItem }) {
                 <strong>Objetivo:</strong> {selected.goal || 'Sem objetivo definido.'}
               </div>
               <div className="button-row">
-                <button className="primary" disabled={!campaignScripts.length} onClick={sendCampaignToApproval}><UserCheck size={16} /> Enviar campanha para aprovacao</button>
+                <button className="primary" disabled={!campaignScripts.length} onClick={sendCampaignToApproval}><UserCheck size={16} /> Enviar campanha para aprovação</button>
               </div>
               {approvalLink && (
                 <div className="approval-link-box">
-                  <strong>Link de aprovacao gerado</strong>
+                  <strong>Link de aprovação gerado</strong>
                   <input readOnly value={approvalLink} />
                   <button className="secondary" onClick={() => { copyText(approvalLink); notify('Link copiado.') }}><Copy size={14} /> Copiar</button>
                 </div>
               )}
               <div className="form-grid">
-                <Select label="Vincular roteiro" value={linkScriptId} onChange={setLinkScriptId} options={[{ label: 'Selecione...', value: '' }, ...availableScripts.map((script) => ({ label: script.title || 'Sem titulo', value: script.id }))]} />
+                <Select label="Vincular roteiro" value={linkScriptId} onChange={setLinkScriptId} options={[{ label: 'Selecione...', value: '' }, ...availableScripts.map((script) => ({ label: script.title || 'Sem título', value: script.id }))]} />
                 <label className="field">
-                  <span>Acao</span>
+                  <span>Ação</span>
                   <button className="secondary" onClick={linkScript}><Plus size={14} /> Vincular</button>
                 </label>
               </div>
               {campaignScripts.map((script) => (
                 <article key={script.id} className="approval-script-row">
                   <div>
-                    <strong>{script.title || 'Sem titulo'}</strong>
+                    <strong>{script.title || 'Sem título'}</strong>
                     <span>{scriptClientName(script, state.clients)} · {script.status || 'Sem status'}</span>
                   </div>
                   <button className="ghost" onClick={() => updateItem('scripts', script.id, { campaign_id: '' })}>Desvincular</button>
@@ -3521,7 +3521,7 @@ function Campanhas({ state, addItem, updateItem, removeItem }) {
           <Select label="Status" value={form.status} onChange={(status) => setForm({ ...form, status })} options={CAMPAIGN_STATUSES.map((status) => ({ value: status, label: CAMPAIGN_STATUS_LABELS[status] }))} />
           <Input label="Inicio" type="date" value={form.start_date} onChange={(start_date) => setForm({ ...form, start_date })} />
           <Input label="Fim" type="date" value={form.end_date} onChange={(end_date) => setForm({ ...form, end_date })} />
-          <label className="field span"><span>Descricao</span><textarea className="textarea" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+          <label className="field span"><span>Descrição</span><textarea className="textarea" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           <label className="field span"><span>Objetivo</span><textarea className="textarea" value={form.goal} onChange={(event) => setForm({ ...form, goal: event.target.value })} /></label>
         </div>
         <div className="button-row"><button className="secondary" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary" onClick={saveCampaign}>Salvar campanha</button></div>
@@ -3568,7 +3568,7 @@ function Aprovacoes({ state, addItem, updateItem, removeItem }) {
     const link = buildApprovalLink(token)
     setGeneratedLink(link)
     copyText(link)
-    notify('Link de aprovacao gerado e copiado.')
+    notify('Link de aprovação gerado e copiado.')
   }
 
   const createBatch = async () => {
@@ -3615,10 +3615,10 @@ function Aprovacoes({ state, addItem, updateItem, removeItem }) {
       )}
       <div className="button-row no-margin">
         <button className="primary" onClick={() => setModalOpen(true)}><UserCheck size={16} /> Gerar link individual</button>
-        <button className="secondary" onClick={() => setBatchOpen(true)}><Megaphone size={16} /> Criar lote de aprovacao</button>
+        <button className="secondary" onClick={() => setBatchOpen(true)}><Megaphone size={16} /> Criar lote de aprovação</button>
       </div>
       <div className="grid-2 align-start">
-        <Panel title="Aprovacoes individuais">
+        <Panel title="Aprovações individuais">
           <div className="approval-list">
             {approvals.map((approval) => {
               const script = scripts.find((item) => item.id === approval.script_id)
@@ -3645,7 +3645,7 @@ function Aprovacoes({ state, addItem, updateItem, removeItem }) {
             {!approvals.length && <div className="empty-box">Nenhum link individual gerado.</div>}
           </div>
         </Panel>
-        <Panel title="Lotes de aprovacao">
+        <Panel title="Lotes de aprovação">
           <div className="approval-list">
             {batches.map((batch) => {
               const approved = (batch.items || []).filter((item) => item.status === 'approved').length
@@ -3657,7 +3657,7 @@ function Aprovacoes({ state, addItem, updateItem, removeItem }) {
                     <Badge text={APPROVAL_STATUS_CONFIG[batch.status]?.label || 'Pendente'} tone={APPROVAL_STATUS_CONFIG[batch.status]?.tone || 'gold'} />
                     <button className="icon-btn" onClick={() => removeItem('approvalBatches', batch.id)}><Trash2 size={14} /></button>
                   </div>
-                  <h3>{batch.title || 'Lote de aprovacao'}</h3>
+                  <h3>{batch.title || 'Lote de aprovação'}</h3>
                   <p>{approved}/{total} aprovados</p>
                   <div className="approval-progress"><span style={{ width: `${total ? (approved / total) * 100 : 0}%` }} /></div>
                   <div className="approval-url"><input readOnly value={link} /><button onClick={() => { copyText(link); notify('Link copiado.') }}><Copy size={14} /></button></div>
@@ -3668,15 +3668,15 @@ function Aprovacoes({ state, addItem, updateItem, removeItem }) {
           </div>
         </Panel>
       </div>
-      <Modal title="Gerar link de aprovacao" open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal title="Gerar link de aprovação" open={modalOpen} onClose={() => setModalOpen(false)}>
         <div className="form-grid">
-          <Select label="Roteiro" value={scriptId} onChange={(id) => { setScriptId(id); const script = scripts.find((item) => item.id === id); setClientName(script ? scriptClientName(script, state.clients) : '') }} options={[{ label: 'Selecione...', value: '' }, ...scripts.filter((script) => !['Aprovando', 'Aprovado', 'Postado'].includes(script.status)).map((script) => ({ label: `${script.title || 'Sem titulo'} · ${scriptClientName(script, state.clients)}`, value: script.id }))]} />
+          <Select label="Roteiro" value={scriptId} onChange={(id) => { setScriptId(id); const script = scripts.find((item) => item.id === id); setClientName(script ? scriptClientName(script, state.clients) : '') }} options={[{ label: 'Selecione...', value: '' }, ...scripts.filter((script) => !['Aprovando', 'Aprovado', 'Postado'].includes(script.status)).map((script) => ({ label: `${script.title || 'Sem título'} · ${scriptClientName(script, state.clients)}`, value: script.id }))]} />
           <Input label="Nome do cliente" value={clientName} onChange={setClientName} />
         </div>
-        <p className="muted-note">Link valido por 7 dias. Qualquer pessoa com o link pode aprovar sem login.</p>
+        <p className="muted-note">Link válido por 7 dias. Qualquer pessoa com o link pode aprovar sem login.</p>
         <div className="button-row"><button className="secondary" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary" onClick={createApproval}>Gerar link</button></div>
       </Modal>
-      <Modal title="Criar lote de aprovacao" open={batchOpen} onClose={() => setBatchOpen(false)} wide>
+      <Modal title="Criar lote de aprovação" open={batchOpen} onClose={() => setBatchOpen(false)} wide>
         <div className="form-grid">
           <Select label="Campanha inteira" value={batchCampaignId} onChange={setBatchCampaignId} options={[{ label: 'Sem campanha: selecionar roteiros', value: '' }, ...campaigns.map((campaign) => ({ label: campaign.title, value: campaign.id }))]} />
         </div>
@@ -3685,12 +3685,12 @@ function Aprovacoes({ state, addItem, updateItem, removeItem }) {
             {scripts.filter((script) => !['Aprovado', 'Postado'].includes(script.status)).map((script) => (
               <label key={script.id}>
                 <input type="checkbox" checked={batchScriptIds.includes(script.id)} onChange={() => toggleBatchScript(script.id)} />
-                <span>{script.title || 'Sem titulo'} <small>{scriptClientName(script, state.clients)}</small></span>
+                <span>{script.title || 'Sem título'} <small>{scriptClientName(script, state.clients)}</small></span>
               </label>
             ))}
           </div>
         )}
-        <p className="muted-note">O lote usa o caminho /aprovacao/lote/token e permite aprovar varios roteiros em uma pagina.</p>
+        <p className="muted-note">O lote usa um link público de aprovação e permite aprovar vários roteiros em uma página.</p>
         <div className="button-row"><button className="secondary" onClick={() => setBatchOpen(false)}>Cancelar</button><button className="primary" onClick={createBatch}>Criar lote</button></div>
       </Modal>
     </section>
@@ -3717,10 +3717,10 @@ function MapaMercado({ state, addItem, updateItem }) {
     deby_insights: null,
   })
   const steps = [
-    ['Nicho', Map, 'Qual e o mercado?'],
-    ['Publico', Users, 'Para quem esse conteudo existe?'],
-    ['Dor', AlertCircle, 'Qual tensao faz parar o scroll?'],
-    ['Concorrentes', Swords, 'Quem ocupa espaco no mesmo mercado?'],
+    ['Nicho', Map, 'Qual é o mercado?'],
+    ['Público', Users, 'Para quem esse conteúdo existe?'],
+    ['Dor', AlertCircle, 'Qual tensão faz parar o scroll?'],
+    ['Concorrentes', Swords, 'Quem ocupa espaço no mesmo mercado?'],
     ['Diferenciais', Star, 'O que sustenta a autoridade?'],
     ['Tom de voz', Mic, 'Como a marca deve soar?'],
   ]
@@ -3740,16 +3740,16 @@ function MapaMercado({ state, addItem, updateItem }) {
   const fillWithDeby = async () => {
     if (!form.niche.trim()) return notify('Informe o nicho antes de preencher com Deby.', 'warning')
     setBusy(true)
-    const prompt = `Preencha um mapa de mercado para este nicho: ${form.niche}. Retorne publico, dor, diferenciais, tom de voz e 3 concorrentes provaveis.`
-    const result = await ai.ask('default', prompt, 'DBE Flow - mapa de mercado para conteudo e campanhas.')
+    const prompt = `Preencha um mapa de mercado para este nicho: ${form.niche}. Retorne público, dor, diferenciais, tom de voz e 3 concorrentes prováveis.`
+    const result = await ai.ask('default', prompt, 'DBE Flow - mapa de mercado para conteúdo e campanhas.')
     setBusy(false)
     const fallback = buildMarketMapSuggestions(form.niche)
     setForm((prev) => ({ ...prev, ...fallback, deby_notes: result.ok ? result.text : fallback.deby_notes }))
   }
   const finishMap = async () => {
     setBusy(true)
-    const prompt = `Analise este mapa de mercado e gere oportunidades de conteudo, angulos, riscos e CTAs:\n${JSON.stringify(form, null, 2)}`
-    const result = await ai.ask('analise', prompt, 'Use linguagem objetiva para planejamento de conteudo DBE.')
+    const prompt = `Analise este mapa de mercado e gere oportunidades de conteúdo, ângulos, riscos e CTAs:\n${JSON.stringify(form, null, 2)}`
+    const result = await ai.ask('analise', prompt, 'Use linguagem objetiva para planejamento de conteúdo DBE.')
     const insights = result.ok ? { summary: result.text, generated_at: new Date().toISOString() } : buildMarketInsights(form)
     await saveMap(true, insights)
     setBusy(false)
@@ -3785,7 +3785,7 @@ function MapaMercado({ state, addItem, updateItem }) {
               <button className="secondary" onClick={fillWithDeby} disabled={busy}><Wand2 size={14} /> Preencher com Deby</button>
             </div>
           )}
-          {step === 1 && <label className="field"><span>Publico-alvo ideal</span><textarea className="textarea" value={form.target_audience} onChange={(event) => setForm({ ...form, target_audience: event.target.value })} /></label>}
+          {step === 1 && <label className="field"><span>Público-alvo ideal</span><textarea className="textarea" value={form.target_audience} onChange={(event) => setForm({ ...form, target_audience: event.target.value })} /></label>}
           {step === 2 && <label className="field"><span>Dor principal</span><textarea className="textarea" value={form.main_pain} onChange={(event) => setForm({ ...form, main_pain: event.target.value })} /></label>}
           {step === 3 && (
             <div className="stack-list">
@@ -3806,7 +3806,7 @@ function MapaMercado({ state, addItem, updateItem }) {
           {step === 5 && (
             <div className="stack-list">
               <div className="tone-grid">
-                {['Descontraido', 'Serio e tecnico', 'Inspiracional', 'Provocativo', 'Educativo', 'Empatico'].map((tone) => (
+                {['Descontraído', 'Sério e técnico', 'Inspiracional', 'Provocativo', 'Educativo', 'Empático'].map((tone) => (
                   <button key={tone} className={form.tone_of_voice === tone ? 'active' : ''} onClick={() => setForm({ ...form, tone_of_voice: tone })}>{tone}</button>
                 ))}
               </div>
@@ -3816,11 +3816,11 @@ function MapaMercado({ state, addItem, updateItem }) {
           <div className="button-row">
             {step > 0 && <button className="ghost" onClick={() => setStep(step - 1)}><ChevronLeft size={14} /> Voltar</button>}
             <button className="secondary" onClick={() => saveMap(false)}><Save size={14} /> Salvar progresso</button>
-            {step < steps.length - 1 ? <button className="primary" onClick={() => setStep(step + 1)}>Proximo <ChevronRight size={14} /></button> : <button className="primary" onClick={finishMap} disabled={busy}><Check size={14} /> Finalizar mapa</button>}
+            {step < steps.length - 1 ? <button className="primary" onClick={() => setStep(step + 1)}>Próximo <ChevronRight size={14} /></button> : <button className="primary" onClick={finishMap} disabled={busy}><Check size={14} /> Finalizar mapa</button>}
           </div>
         </div>
       </Panel>
-      {form.is_complete && <div className="inline-notice success"><strong>Mapa completo.</strong> A Deby usa esta base para roteiros, campanhas e aprovacoes.</div>}
+      {form.is_complete && <div className="inline-notice success"><strong>Mapa completo.</strong> A Deby usa esta base para roteiros, campanhas e aprovações.</div>}
       {form.deby_insights && (
         <Panel title="Insights Deby">
           <div className="tp-preview">{form.deby_insights.summary || JSON.stringify(form.deby_insights, null, 2)}</div>
@@ -3843,7 +3843,7 @@ function PublicApprovalPage({ token }) {
     try {
       const res = await fetch(`/.netlify/functions/public-approval?token=${encodeURIComponent(token)}`)
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Link invalido.')
+      if (!res.ok) throw new Error(json.error || 'Link inválido.')
       setApproval(json.approval)
     } catch (err) {
       setError(err.message)
@@ -3862,7 +3862,7 @@ function PublicApprovalPage({ token }) {
         body: JSON.stringify({ token, action, comment, author_name: author }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Nao foi possivel salvar.')
+      if (!res.ok) throw new Error(json.error || 'Não foi possível salvar.')
       setApproval(json.approval)
       setComment('')
     } catch (err) {
@@ -3885,7 +3885,7 @@ function PublicBatchApprovalPage({ token }) {
     try {
       const res = await fetch(`/.netlify/functions/public-batch-approval?token=${encodeURIComponent(token)}`)
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Link invalido.')
+      if (!res.ok) throw new Error(json.error || 'Link inválido.')
       setBatch(json.batch)
     } catch (err) {
       setError(err.message)
@@ -3904,7 +3904,7 @@ function PublicBatchApprovalPage({ token }) {
         body: JSON.stringify({ token, action, script_id: scriptId, comment, author_name: author }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Nao foi possivel salvar.')
+      if (!res.ok) throw new Error(json.error || 'Não foi possível salvar.')
       setBatch(json.batch)
       setComment('')
     } catch (err) {
@@ -3915,16 +3915,16 @@ function PublicBatchApprovalPage({ token }) {
   return (
     <div className="public-approval-page">
       <img src={logo} alt="DBE" />
-      {loading && <div className="public-card">Carregando aprovacao...</div>}
+      {loading && <div className="public-card">Carregando aprovação...</div>}
       {error && <div className="public-card error">{error}</div>}
       {!loading && batch && (
         <div className="public-card wide">
           <Badge text={APPROVAL_STATUS_CONFIG[batch.status]?.label || 'Pendente'} tone={APPROVAL_STATUS_CONFIG[batch.status]?.tone || 'gold'} />
-          <h1>{batch.title || 'Lote de aprovacao'}</h1>
+          <h1>{batch.title || 'Lote de aprovação'}</h1>
           <p>Revise os roteiros abaixo e aprove individualmente ou o lote inteiro.</p>
           <div className="form-grid">
             <Input label="Seu nome" value={author} onChange={setAuthor} />
-            <label className="field"><span>Comentario geral</span><textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
+            <label className="field"><span>Comentário geral</span><textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
           </div>
           <div className="public-script-list">
             {(batch.items || []).map((item) => (
@@ -3950,7 +3950,7 @@ function PublicBatchApprovalPage({ token }) {
 }
 
 function PublicApprovalShell({ loading, error, approval, comment, setComment, author, setAuthor, onApprove, onChanges }) {
-  if (loading) return <div className="public-approval-page"><img src={logo} alt="DBE" /><div className="public-card">Carregando aprovacao...</div></div>
+  if (loading) return <div className="public-approval-page"><img src={logo} alt="DBE" /><div className="public-card">Carregando aprovação...</div></div>
   if (error) return <div className="public-approval-page"><img src={logo} alt="DBE" /><div className="public-card error">{error}</div></div>
   if (!approval) return null
   const config = APPROVAL_STATUS_CONFIG[approval.status] || APPROVAL_STATUS_CONFIG.pending
@@ -3959,7 +3959,7 @@ function PublicApprovalShell({ loading, error, approval, comment, setComment, au
       <img src={logo} alt="DBE" />
       <div className="public-card">
         <Badge text={config.label} tone={config.tone} />
-        <h1>{approval.script?.title || 'Conteudo para aprovacao'}</h1>
+        <h1>{approval.script?.title || 'Conteúdo para aprovação'}</h1>
         <p>Cliente: <strong>{approval.client_name || 'Cliente DBE'}</strong></p>
         <pre>{scriptApprovalText(approval.script)}</pre>
         {(approval.comments || []).length > 0 && (
@@ -3971,7 +3971,7 @@ function PublicApprovalShell({ loading, error, approval, comment, setComment, au
           <>
             <div className="form-grid">
               <Input label="Seu nome" value={author} onChange={setAuthor} />
-              <label className="field"><span>Comentario ou ajustes</span><textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
+              <label className="field"><span>Comentário ou ajustes</span><textarea className="textarea" value={comment} onChange={(event) => setComment(event.target.value)} /></label>
             </div>
             <div className="button-row">
               <button className="secondary" onClick={onChanges}>Pedir ajustes</button>
@@ -3979,7 +3979,7 @@ function PublicApprovalShell({ loading, error, approval, comment, setComment, au
             </div>
           </>
         ) : (
-          <div className="inline-notice success">Esta aprovacao ja foi revisada.</div>
+          <div className="inline-notice success">Esta aprovação já foi revisada.</div>
         )}
       </div>
     </div>
@@ -4000,22 +4000,22 @@ function readJson(key, fallback) {
 
 function buildMarketMapSuggestions(niche) {
   return {
-    target_audience: `Pessoas que ja sentem a dor central de ${niche}, mas ainda nao tem clareza de criterio para decidir.`,
-    main_pain: `A dificuldade principal e transformar interesse em decisao porque o publico nao entende valor, risco e proximo passo.`,
+    target_audience: `Pessoas que já sentem a dor central de ${niche}, mas ainda não têm clareza de critério para decidir.`,
+    main_pain: `A dificuldade principal é transformar interesse em decisão porque o público não entende valor, risco e próximo passo.`,
     competitors: [
-      { name: 'Concorrente direto', strength: 'Alta frequencia de conteudo' },
-      { name: 'Especialista autoridade', strength: 'Prova de metodo' },
-      { name: 'Oferta barata', strength: 'Preco e promessa simples' },
+      { name: 'Concorrente direto', strength: 'Alta frequência de conteúdo' },
+      { name: 'Especialista autoridade', strength: 'Prova de método' },
+      { name: 'Oferta barata', strength: 'Preço e promessa simples' },
     ],
-    differentiators: 'Metodo DBE, clareza de posicionamento, prova de criterio e comunicacao sem promessa vazia.',
-    tone_of_voice: 'Educativo, direto e estrategico',
-    deby_notes: 'Sugestao local gerada quando a IA nao responde.',
+    differentiators: 'Método DBE, clareza de posicionamento, prova de critério e comunicação sem promessa vazia.',
+    tone_of_voice: 'Educativo, direto e estratégico',
+    deby_notes: 'Sugestão local gerada quando a IA não responde.',
   }
 }
 
 function buildMarketInsights(form) {
   return {
-    summary: `Oportunidade: posicionar ${form.niche || 'o nicho'} com foco em dor percebida, criterio de escolha e prova de metodo.\n\nAngulos:\n- Erros comuns que travam a decisao\n- Bastidores do metodo\n- Comparativos eticos contra alternativas fracas\n\nRiscos:\n- Conteudo generico demais\n- Promessa sem sustentacao\n- CTA sem proximo passo claro`,
+    summary: `Oportunidade: posicionar ${form.niche || 'o nicho'} com foco em dor percebida, critério de escolha e prova de método.\n\nÂngulos:\n- Erros comuns que travam a decisão\n- Bastidores do método\n- Comparativos éticos contra alternativas fracas\n\nRiscos:\n- Conteúdo genérico demais\n- Promessa sem sustentação\n- CTA sem próximo passo claro`,
     generated_at: new Date().toISOString(),
   }
 }
@@ -4190,7 +4190,7 @@ function InstagramAnalytics({ state, currentUser }) {
     const res = await meta.instagramStatus(clientId, currentUser)
     setLoading(false)
     if (res.ok) setData(res)
-    else notify(res.error || 'Nao foi possivel carregar o Instagram.', 'danger')
+    else notify(res.error || 'Não foi possível carregar o Instagram.', 'danger')
   }, [clientId, currentUser])
 
   useEffect(() => {
@@ -4231,7 +4231,7 @@ function InstagramAnalytics({ state, currentUser }) {
       notify('Metricas do Instagram sincronizadas.', 'success')
     } else {
       setData(account)
-      notify(media.error || 'Conta sincronizada, mas posts nao foram atualizados.', 'warning')
+      notify(media.error || 'Conta sincronizada, mas posts não foram atualizados.', 'warning')
     }
   }
 
@@ -4253,7 +4253,7 @@ function InstagramAnalytics({ state, currentUser }) {
     setBusy('ai')
     const res = await ai.ask(
       'analise',
-      'Analise as metricas de Instagram deste cliente e gere insights praticos para a DBE priorizar conteudo, formatos e proximas acoes.',
+      'Analise as métricas de Instagram deste cliente e gere insights práticos para a DBE priorizar conteúdo, formatos e próximas ações.',
       buildInstagramInsightContext(selected, data),
     )
     setBusy('')
@@ -4273,7 +4273,7 @@ function InstagramAnalytics({ state, currentUser }) {
           />
           <div className="instagram-status-card">
             <span>Status da conexao</span>
-            <strong>{integration ? `@${integration.instagram_username || integration.instagram_user_id}` : 'Nao conectado'}</strong>
+            <strong>{integration ? `@${integration.instagram_username || integration.instagram_user_id}` : 'Não conectado'}</strong>
             <Badge text={integration ? 'Conectado' : 'Pendente'} tone={integration ? 'success' : 'gold'} />
           </div>
           <div className="button-row no-margin">
@@ -4289,23 +4289,23 @@ function InstagramAnalytics({ state, currentUser }) {
           </div>
         </div>
         <p className="muted-note">
-          A tela usa dados salvos no Supabase. A Meta so e chamada quando voce conecta a conta ou clica em sincronizar.
-          {integration?.last_sync_at ? ` Ultima sincronizacao: ${dateTime(integration.last_sync_at)}.` : ''}
+          A tela usa dados salvos no Supabase. A Meta só é chamada quando você conecta a conta ou clica em sincronizar.
+          {integration?.last_sync_at ? ` Última sincronização: ${dateTime(integration.last_sync_at)}.` : ''}
         </p>
-        {loading && <div className="inline-notice">Carregando metricas salvas...</div>}
+        {loading && <div className="inline-notice">Carregando métricas salvas...</div>}
       </Panel>
 
       <div className="grid-4">
         <MiniStat label="Alcance" value={compactNumber(totals.reach)} tone="blue" />
         <MiniStat label="Views" value={compactNumber(totals.views)} tone="success" />
         <MiniStat label="Seguidores" value={compactNumber(totals.followers)} tone="gold" />
-        <MiniStat label="Interacoes" value={compactNumber(Number(totals.likes || 0) + Number(totals.comments || 0) + Number(totals.shares || 0) + Number(totals.saves || 0))} tone="danger" />
+        <MiniStat label="Interações" value={compactNumber(Number(totals.likes || 0) + Number(totals.comments || 0) + Number(totals.shares || 0) + Number(totals.saves || 0))} tone="danger" />
       </div>
 
       {!integration ? (
         <Panel title="Conectar conta profissional">
           <div className="empty-box">
-            Selecione o cliente e conecte uma conta profissional do Instagram vinculada a uma Pagina do Facebook.
+            Selecione o cliente e conecte uma conta profissional do Instagram vinculada a uma Página do Facebook.
             O historico antigo sera mantido quando a conta for trocada.
           </div>
         </Panel>
@@ -4346,8 +4346,8 @@ function InstagramAnalytics({ state, currentUser }) {
               <article className="ig-post-row" key={post.id}>
                 <strong>{index + 1}</strong>
                 <div>
-                  <h3>{post.caption || post.media_type || 'Publicacao sem legenda'}</h3>
-                  <span>{post.media_type || 'MIDIA'} - {post.timestamp ? dateTime(post.timestamp) : '-'}</span>
+                  <h3>{post.caption || post.media_type || 'Publicação sem legenda'}</h3>
+                  <span>{post.media_type || 'MÍDIA'} - {post.timestamp ? dateTime(post.timestamp) : '-'}</span>
                 </div>
                 <MiniStat label="Score" value={compactNumber(instagramPostScore(post))} tone="blue" />
                 <MiniStat label="Alcance" value={compactNumber(post.reach)} tone="success" />
@@ -4366,7 +4366,7 @@ function InstagramAnalytics({ state, currentUser }) {
           </button>
           <button className="ghost" onClick={() => copyText(aiText)} disabled={!aiText}><Copy size={16} /> Copiar</button>
         </div>
-        <pre className="ai-output compact-ai">{aiText || 'Sincronize as metricas e gere uma leitura estrategica para proximos conteudos.'}</pre>
+        <pre className="ai-output compact-ai">{aiText || 'Sincronize as métricas e gere uma leitura estratégica para próximos conteúdos.'}</pre>
       </Panel>
     </section>
   )
@@ -5093,7 +5093,7 @@ function FinanceiroCompleto() {
       const payload = { action: form.id ? 'update' : 'create', date: form.date, desc: form.desc, cat: form.cat, value: parseFloat(form.value) }
       if (form.id) payload.id = form.id
       const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify(payload) })).json()
-      if (r.success) { setTxModal(null); await loadData(); notify(form.id ? 'Transacao atualizada com sucesso.' : 'Transacao criada com sucesso.', 'success') } else notify('Erro: ' + r.error, 'danger')
+      if (r.success) { setTxModal(null); await loadData(); notify(form.id ? 'Transação atualizada com sucesso.' : 'Transação criada com sucesso.', 'success') } else notify('Erro: ' + r.error, 'danger')
     } catch (e) { notify('Erro: ' + e.message, 'danger') } finally { setSaving(false) }
   }
   async function delTx(id) {
@@ -5101,7 +5101,7 @@ function FinanceiroCompleto() {
     setSaving(true)
     try {
       const r = await (await fetch(FIN_API, { method: 'POST', body: JSON.stringify({ action: 'delete', id }) })).json()
-      if (r.success) { await loadData(); notify('Transacao excluida com sucesso.', 'danger') } else notify('Erro: ' + r.error, 'danger')
+      if (r.success) { await loadData(); notify('Transação excluída com sucesso.', 'danger') } else notify('Erro: ' + r.error, 'danger')
     } catch (e) { notify('Erro: ' + e.message, 'danger') } finally { setSaving(false) }
   }
   async function savePrev(form) {
@@ -5998,7 +5998,7 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
       setProfileMsg('Foto carregada. Clique em Salvar perfil para confirmar.')
       notify('Foto carregada. Salve o perfil para confirmar.', 'success')
     } catch (err) {
-      const message = err.message || 'Nao foi possivel carregar a foto.'
+      const message = err.message || 'Não foi possível carregar a foto.'
       setProfileMsg(message)
       notify(message, 'danger')
     } finally {
@@ -6033,18 +6033,18 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
       notify('Perfil salvo com sucesso.', 'success')
     } catch (err) {
       const message = err.name === 'QuotaExceededError'
-        ? 'Nao foi possivel salvar: o armazenamento do navegador esta cheio.'
-        : 'Nao foi possivel salvar o perfil.'
+        ? 'Não foi possível salvar: o armazenamento do navegador está cheio.'
+        : 'Não foi possível salvar o perfil.'
       setProfileMsg(message)
       notify(message, 'danger')
     }
   }
 
   const changePassword = async () => {
-    if (!isSupabaseConfigured) { setPassMsg('Senha local desativada. Configure o Supabase Auth para gerenciar usuarios.'); return }
+    if (!isSupabaseConfigured) { setPassMsg('Senha local desativada. Configure o Supabase Auth para gerenciar usuários.'); return }
     if (newPass.length < 6) { setPassMsg('Nova senha precisa ter ao menos 6 caracteres'); return }
     const { error } = await supabase.auth.updateUser({ password: newPass })
-    if (error) { setPassMsg(error.message || 'Nao foi possivel alterar a senha'); return }
+    if (error) { setPassMsg(error.message || 'Não foi possível alterar a senha'); return }
     setPass('')
     setNewPass('')
     setPassMsg('Senha alterada com sucesso.')
@@ -6052,7 +6052,7 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
   }
 
   const addMember = () => {
-    setMemberMsg('Convites locais foram desativados. Crie o usuario no Supabase Auth; a migration vincula ao workspace padrao no primeiro acesso.')
+    setMemberMsg('Convites locais foram desativados. Crie o usuário no Supabase Auth; a migration vincula ao workspace padrão no primeiro acesso.')
     return
     if (!newMemberEmail || !newMemberName) { setMemberMsg('Preencha nome e e-mail'); return }
     if (newMemberRole === 'editor' && !newMemberPass) { setMemberMsg('Defina uma senha para o editor'); return }
@@ -6066,7 +6066,7 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
   }
 
   const removeMember = (email) => {
-    setMemberMsg(email === currentUser?.email ? 'Nao e possivel remover a si mesmo.' : 'Remova ou bloqueie este usuario no Supabase Auth/workspace_members.')
+    setMemberMsg(email === currentUser?.email ? 'Não é possível remover a si mesmo.' : 'Remova ou bloqueie este usuário no Supabase Auth/workspace_members.')
     return
     if (email === currentUser?.email) { setMemberMsg('Não é possível remover a si mesmo'); return }
     saveMembers(members.filter(m => m.email !== email))
@@ -6354,7 +6354,7 @@ function Panel({ title, action, onAction, children }) {
   )
 }
 
-function Modal({ title, open, onClose, children, wide = false, confirmOnClose = false, confirmMessage = 'Existem alteracoes nao salvas. Deseja fechar mesmo assim?' }) {
+function Modal({ title, open, onClose, children, wide = false, confirmOnClose = false, confirmMessage = 'Existem alterações não salvas. Deseja fechar mesmo assim?' }) {
   if (!open) return null
   const requestClose = () => {
     if (confirmOnClose && !window.confirm(confirmMessage)) return
