@@ -22,6 +22,23 @@ async function upsert(table, row, onConflict) {
   }).catch((e) => console.warn('[webhook] upsert', table, e.message))
 }
 
+async function patchByWaId(row) {
+  if (!row?.wa_message_id) return
+  await fetch(`${SB_URL}/rest/v1/wa_messages?wa_message_id=eq.${encodeURIComponent(row.wa_message_id)}`, {
+    method: 'PATCH',
+    headers: { ...sbHeaders, Prefer: 'return=minimal' },
+    body: JSON.stringify(row),
+  }).catch((e) => console.warn('[webhook] patch message', e.message))
+}
+
+async function logIntegration(row) {
+  await fetch(`${SB_URL}/rest/v1/integration_logs`, {
+    method: 'POST',
+    headers: { ...sbHeaders, Prefer: 'return=minimal' },
+    body: JSON.stringify(row),
+  }).catch(() => {})
+}
+
 // Detecta o tipo de mídia e baixa da Evolution, faz upload pro Supabase Storage.
 // Retorna { mediaUrl, mediaMime } ou null se não for mídia.
 async function handleMedia(msg, waId) {
@@ -110,8 +127,9 @@ export default async (req) => {
 
   const event = payload.event || payload.type
   const data = payload.data || payload
+  const eventName = String(event || '').toLowerCase()
 
-  if (event && event.toLowerCase().includes('contacts')) {
+  if (eventName.includes('contacts')) {
     const contacts = Array.isArray(data) ? data : [data]
     for (const item of contacts) {
       const contact = normalizeContact(item)
@@ -127,7 +145,58 @@ export default async (req) => {
     }
   }
 
-  if (event && event.toLowerCase().includes('messages')) {
+  if (eventName.includes('messages') && eventName.includes('delete')) {
+    const msg = Array.isArray(data) ? data[0] : data
+    const key = msg?.key || msg
+    const waId = key?.id || msg?.id || msg?.messageId
+    const remoteJid = key?.remoteJid || msg?.remoteJid
+    if (waId) {
+      await patchByWaId({
+        wa_message_id: waId,
+        deleted_for_all_at: new Date().toISOString(),
+        deleted_by_remote: true,
+        action_status: 'deleted_from_whatsapp',
+      })
+      await logIntegration({
+        integration: 'whatsapp',
+        action: 'remote_delete_message',
+        status: 'info',
+        entity_type: 'wa_messages',
+        entity_id: waId,
+        message: 'Mensagem excluída no WhatsApp e refletida no DBE Flow',
+        metadata: { wa_message_id: waId, remote_jid: remoteJid },
+      })
+    }
+    return json({ ok: true })
+  }
+
+  if (eventName.includes('messages') && eventName.includes('update')) {
+    const msg = Array.isArray(data) ? data[0] : data
+    const remoteJid = msg?.key?.remoteJid || msg?.remoteJid
+    const waId = msg?.key?.id || msg?.id || msg?.messageId
+    const text = extractText(msg?.message)
+    if (waId && text) {
+      await patchByWaId({
+        wa_message_id: waId,
+        content: text,
+        edited_at: new Date().toISOString(),
+        edited_by_remote: true,
+        action_status: 'edited_from_whatsapp',
+      })
+      await logIntegration({
+        integration: 'whatsapp',
+        action: 'remote_edit_message',
+        status: 'info',
+        entity_type: 'wa_messages',
+        entity_id: waId,
+        message: 'Mensagem editada no WhatsApp e refletida no DBE Flow',
+        metadata: { wa_message_id: waId, remote_jid: remoteJid },
+      })
+    }
+    return json({ ok: true })
+  }
+
+  if (eventName.includes('messages')) {
     const msg = Array.isArray(data) ? data[0] : data
     const remoteJid = msg?.key?.remoteJid || msg?.remoteJid
     if (remoteJid && !remoteJid.includes('@g.us')) {

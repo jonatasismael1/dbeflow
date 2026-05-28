@@ -319,16 +319,117 @@ export async function deleteItem(key, id) {
 
 export async function loadConversations() {
   if (!isSupabaseConfigured) return []
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('wa_conversations').select('*').order('last_at', { ascending: false }).limit(200)
+  if (error) {
+    console.warn('[db] loadConversations', error.message)
+    return []
+  }
   return data || []
 }
 
-export async function loadMessages(remoteJid) {
+export async function loadMessages(remoteJid, options = {}) {
   if (!isSupabaseConfigured) return []
-  const { data } = await supabase
-    .from('wa_messages').select('*').eq('remote_jid', remoteJid).order('ts', { ascending: true }).limit(500)
+  let query = supabase
+    .from('wa_messages')
+    .select('*')
+    .eq('remote_jid', remoteJid)
+    .is('deleted_for_me_at', null)
+    .order('ts', { ascending: true })
+    .limit(500)
+  if (options.after) query = query.gt('ts', options.after)
+  const { data, error } = await query
+  if (error) {
+    console.warn('[db] loadMessages', error.message)
+    return []
+  }
   return data || []
+}
+
+export async function clearConversation(remoteJid, actor = null) {
+  if (!isSupabaseConfigured || !remoteJid) return null
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('wa_conversations')
+    .update({
+      cleared_at: now,
+      cleared_by_email: actor?.email || null,
+      last_message: 'Conversa limpa no DBE Flow',
+      last_at: now,
+      unread: 0,
+    })
+    .eq('remote_jid', remoteJid)
+  if (error) throw new Error(error.message || 'Falha ao limpar conversa')
+  await addIntegrationLog({
+    integration: 'whatsapp',
+    action: 'clear_conversation',
+    status: 'success',
+    entityType: 'wa_conversations',
+    entityId: remoteJid,
+    message: 'Conversa limpa no DBE Flow',
+    actor,
+  })
+  return now
+}
+
+export async function markMessageDeletedForMe(messageId, actor = null) {
+  if (!isSupabaseConfigured || !messageId) return null
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('wa_messages')
+    .update({ deleted_for_me_at: now, deleted_for_me_by_email: actor?.email || null })
+    .eq('id', messageId)
+  if (error) throw new Error(error.message || 'Falha ao excluir mensagem para voce')
+  return now
+}
+
+export async function updateLocalWhatsAppMessage(messageId, patch) {
+  if (!isSupabaseConfigured || !messageId) return null
+  const { data, error } = await supabase
+    .from('wa_messages')
+    .update(patch)
+    .eq('id', messageId)
+    .select('*')
+    .single()
+  if (error) throw new Error(error.message || 'Falha ao atualizar mensagem')
+  return data
+}
+
+export async function loadIntegrationLogs(limit = 80) {
+  if (!isSupabaseConfigured) return []
+  const { data, error } = await supabase
+    .from('integration_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    console.warn('[db] loadIntegrationLogs', error.message)
+    return []
+  }
+  return data || []
+}
+
+export async function addIntegrationLog({ integration, action, status = 'info', entityType = '', entityId = '', message = '', metadata = {}, actor = null }) {
+  if (!isSupabaseConfigured) return null
+  const { data, error } = await supabase
+    .from('integration_logs')
+    .insert({
+      integration,
+      action,
+      status,
+      entity_type: entityType || null,
+      entity_id: entityId ? String(entityId) : null,
+      message,
+      metadata,
+      actor_email: actor?.email || null,
+    })
+    .select('*')
+    .single()
+  if (error) {
+    console.warn('[db] addIntegrationLog', error.message)
+    return null
+  }
+  return data
 }
 
 export async function loadVideoProjects(clientId) {

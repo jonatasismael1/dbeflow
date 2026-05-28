@@ -44,6 +44,7 @@ import {
   MicOff,
   MonitorPlay,
   Moon,
+  MoreHorizontal,
   Pause,
   Paperclip,
   Pencil,
@@ -80,7 +81,7 @@ import './styles.css'
 import logo from './assets/logo-dbe.png'
 import { importedClients, importedScripts } from './data/importedData.js'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
-import { loadAll, insertItem, saveItem, deleteItem, addActivityLog, loadActivityLogs, loadContentComments, addContentComment, loadEntityFiles, addEntityFile, loadConversations, loadMessages, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
+import { loadAll, insertItem, saveItem, deleteItem, addActivityLog, loadActivityLogs, loadContentComments, addContentComment, loadEntityFiles, addEntityFile, loadConversations, loadMessages, clearConversation, markMessageDeletedForMe, updateLocalWhatsAppMessage, loadIntegrationLogs, addIntegrationLog, loadVideoProjects, loadVideoProjectFiles, loadDriveIntegration, updateVideoProject } from './lib/db'
 import { whatsapp, meta, ai, contract, drive } from './lib/api'
 
 const STORAGE_KEY = 'dbe-flow-state-v2' // v2 = dados reais importados do Notion
@@ -742,7 +743,7 @@ function App() {
             <Badge text={isSupabaseConfigured ? (loading ? 'Sincronizando...' : 'Nuvem') : 'Local'} tone={isSupabaseConfigured ? 'success' : 'gold'} />
             <label className="search">
               <Search size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente, lead, roteiro..." />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar na tela atual..." />
             </label>
             <button className="primary" onClick={() => exportWorkspace(state)}>
               <UploadCloud size={16} />
@@ -769,10 +770,10 @@ function App() {
         {active === 'mercado' && <MapaMercado state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'ai' && <DebyAI state={state} addItem={addItem} updateItem={updateItem} />}
         {active === 'instagram' && <InstagramAnalytics state={state} currentUser={currentUser} />}
-        {active === 'conversas' && <Conversas state={state} addItem={addItem} />}
+        {active === 'conversas' && <Conversas state={state} addItem={addItem} currentUser={currentUser} />}
         {active === 'producao' && <ProducaoVideo state={state} updateItem={updateItem} />}
         {active === 'financeiro' && <FinanceiroCompleto />}
-        {active === 'configuracoes' && <Configuracoes currentUser={currentUser} onProfileUpdate={updateCurrentUser} onLogout={logout} theme={theme} setTheme={setTheme} />}
+        {active === 'configuracoes' && <Configuracoes state={state} currentUser={currentUser} onProfileUpdate={updateCurrentUser} onLogout={logout} theme={theme} setTheme={setTheme} />}
       </main>
 
       {/* Mobile bottom nav — 4 botões principais (filtrados por role) */}
@@ -2910,6 +2911,7 @@ function Calendario({ state, updateItem }) {
   }
 
   const dayEventsForPanel = selectedDay ? allEvents.filter(e => e.date === selectedDay) : []
+  const agendaEvents = [...allEvents].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 80)
 
   return (
     <section className="cal-shell page-grid">
@@ -2927,6 +2929,7 @@ function Calendario({ state, updateItem }) {
         <div style={{marginLeft:'auto', display:'flex', gap:6, alignItems:'center'}}>
           <button className={`cal-view-btn${calView === 'week' ? ' active' : ''}`} onClick={() => setCalView('week')}>Semana</button>
           <button className={`cal-view-btn${calView === 'month' ? ' active' : ''}`} onClick={() => setCalView('month')}>Mês</button>
+          <button className={`cal-view-btn${calView === 'agenda' ? ' active' : ''}`} onClick={() => setCalView('agenda')}>Lista</button>
           <button className={`cal-view-btn${hasFilters ? ' active' : ''}`} onClick={() => setFilterOpen(true)} title="Filtros">
             <Filter size={13} />{hasFilters ? ' Filtros' : ' Filtrar'}
           </button>
@@ -3121,7 +3124,20 @@ function Calendario({ state, updateItem }) {
         )
       })()}
 
-      {calView === 'week' ? (
+      {calView === 'agenda' ? (
+        <div className="cal-agenda-list">
+          {agendaEvents.length ? agendaEvents.map((ev, index) => (
+            <button key={`${ev.id || ev.label}-${ev.date}-${index}`} className="cal-agenda-row" onClick={() => setSelectedEvent(ev)}>
+              <div className={`cal-dot ${ev.type}`} />
+              <div>
+                <strong>{ev.label}</strong>
+                <span>{date(ev.date)} · {ev.sub || ev.client || 'DBE'} {ev.status ? `· ${ev.status}` : ''}</span>
+              </div>
+              <ChevronRight size={15} />
+            </button>
+          )) : <div className="empty-box">Nenhum evento nos filtros atuais.</div>}
+        </div>
+      ) : calView === 'week' ? (
         <>
           <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
             <button className="secondary" style={{minHeight:34, padding:'0 12px'}} onClick={() => setWeekOffset(w => w - 1)}><ChevronLeft size={16} /></button>
@@ -4690,7 +4706,7 @@ function buildInstagramInsightContext(client, payload) {
   }, null, 2)
 }
 
-function Conversas({ state, addItem }) {
+function Conversas({ state, addItem, currentUser }) {
   const [waConversations, setWaConversations] = useState([])
   const [messages, setMessages] = useState([])
   const [contactQuery, setContactQuery] = useState('')
@@ -4701,6 +4717,10 @@ function Conversas({ state, addItem }) {
   const [activeTemplate, setActiveTemplate] = useState('')
   const [mobileConvView, setMobileConvView] = useState('list') // 'list' | 'chat'
   const [profileOpen, setProfileOpen] = useState(false)
+  const [messageMenuId, setMessageMenuId] = useState('')
+  const [editingMessage, setEditingMessage] = useState(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [chatConfirm, setChatConfirm] = useState(null)
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
   const [contactNotes, setContactNotes] = useState(() => {
@@ -4745,9 +4765,10 @@ function Conversas({ state, addItem }) {
       name: item.name || String(item.remote_jid || '').split('@')[0],
       profile_pic: item.profile_pic,
       type: 'WhatsApp',
-      subtitle: `WhatsApp · ${item.last_at ? dateTime(item.last_at) : ''}`,
-      last: item.last_message || '',
+      subtitle: item.cleared_at ? `WhatsApp · limpo em ${dateTime(item.cleared_at)}` : `WhatsApp · ${item.last_at ? dateTime(item.last_at) : ''}`,
+      last: item.cleared_at && (!item.last_at || new Date(item.last_at) <= new Date(item.cleared_at)) ? 'Conversa limpa no DBE Flow' : (item.last_message || ''),
       unread: item.unread || 0,
+      cleared_at: item.cleared_at,
     })),
     ...crmContacts.filter((item) => !realPhones.has(String(item.phone || '').replace(/\D/g, ''))),
   ].filter((item) => !contactQuery || JSON.stringify(item).toLowerCase().includes(contactQuery.toLowerCase()))
@@ -4781,9 +4802,9 @@ function Conversas({ state, addItem }) {
   useEffect(() => {
     if (!selected?.remote_jid || !isSupabaseConfigured) { setMessages([]); return }
     let alive = true
-    loadMessages(selected.remote_jid).then((rows) => { if (alive) setMessages(rows) })
+    loadMessages(selected.remote_jid, { after: selected.cleared_at }).then((rows) => { if (alive) setMessages(rows) })
     return () => { alive = false }
-  }, [selected?.remote_jid])
+  }, [selected?.remote_jid, selected?.cleared_at])
 
   // Fecha o perfil ao trocar de contato
   useEffect(() => { setProfileOpen(false) }, [contactId])
@@ -4821,6 +4842,103 @@ function Conversas({ state, addItem }) {
       setTimeout(() => setFeedback(''), 4000)
       openWhatsApp(selected.phone, text)
     }
+  }
+
+  const requestClearConversation = () => {
+    if (!selected?.remote_jid) return
+    setChatConfirm({
+      title: 'Limpar conversa no DBE Flow',
+      message: 'Isso esconde o histórico antigo apenas no DBE Flow e passa a mostrar somente mensagens novas. O WhatsApp do celular não será alterado.',
+      confirmLabel: 'Limpar conversa',
+      onConfirm: clearSelectedConversation,
+    })
+  }
+
+  const clearSelectedConversation = async () => {
+    setChatConfirm(null)
+    if (!selected?.remote_jid) return
+    try {
+      const clearedAt = await clearConversation(selected.remote_jid, currentUser)
+      setMessages([])
+      setWaConversations((rows) => rows.map((row) => row.remote_jid === selected.remote_jid ? {
+        ...row,
+        cleared_at: clearedAt,
+        cleared_by_email: currentUser?.email || null,
+        last_message: 'Conversa limpa no DBE Flow',
+        last_at: clearedAt,
+        unread: 0,
+      } : row))
+      setFeedback('Conversa limpa no DBE Flow. Novas mensagens aparecerão normalmente.')
+    } catch (err) {
+      setFeedback(`Erro ao limpar conversa: ${err.message}`)
+    }
+    setTimeout(() => setFeedback(''), 4000)
+  }
+
+  const deleteMessageForMe = async (msg) => {
+    setMessageMenuId('')
+    try {
+      await markMessageDeletedForMe(msg.id, currentUser)
+      setMessages((rows) => rows.filter((row) => row.id !== msg.id))
+      setFeedback('Mensagem removida desta tela.')
+    } catch (err) {
+      setFeedback(`Erro ao excluir mensagem: ${err.message}`)
+    }
+    setTimeout(() => setFeedback(''), 3500)
+  }
+
+  const requestDeleteForEveryone = (msg) => {
+    setMessageMenuId('')
+    setChatConfirm({
+      title: 'Excluir mensagem para todos',
+      message: 'O DBE Flow tentará apagar esta mensagem também no WhatsApp via Evolution API. O WhatsApp pode negar mensagens antigas ou sem permissão.',
+      confirmLabel: 'Excluir para todos',
+      onConfirm: () => deleteMessageForEveryone(msg),
+    })
+  }
+
+  const deleteMessageForEveryone = async (msg) => {
+    setChatConfirm(null)
+    try {
+      const res = await whatsapp.deleteMessageForEveryone(msg)
+      if (!res.ok) throw new Error(res.error || 'Falha na Evolution API')
+      const deletedAt = new Date().toISOString()
+      setMessages((rows) => rows.map((row) => row.id === msg.id ? { ...row, deleted_for_all_at: deletedAt, action_status: 'deleted_for_everyone' } : row))
+      setFeedback('Mensagem excluída para todos.')
+    } catch (err) {
+      setFeedback(`Erro ao excluir para todos: ${err.message}`)
+    }
+    setTimeout(() => setFeedback(''), 4500)
+  }
+
+  const startEditMessage = (msg) => {
+    setMessageMenuId('')
+    setEditingMessage(msg)
+    setEditDraft(msg.content || '')
+  }
+
+  const saveEditedMessage = async () => {
+    const text = editDraft.trim()
+    if (!editingMessage?.id || !text) return
+    try {
+      const res = await whatsapp.editMessage(editingMessage, text)
+      if (!res.ok) throw new Error(res.error || 'Falha na Evolution API')
+      const editedAt = new Date().toISOString()
+      const history = Array.isArray(editingMessage.edit_history) ? editingMessage.edit_history : []
+      setMessages((rows) => rows.map((row) => row.id === editingMessage.id ? {
+        ...row,
+        content: text,
+        edited_at: editedAt,
+        edited_by_remote: false,
+        edit_history: [...history, { content: editingMessage.content || '', edited_at: editedAt, actor_email: currentUser?.email || null }],
+      } : row))
+      setEditingMessage(null)
+      setEditDraft('')
+      setFeedback('Mensagem editada.')
+    } catch (err) {
+      setFeedback(`Erro ao editar mensagem: ${err.message}`)
+    }
+    setTimeout(() => setFeedback(''), 4500)
   }
 
   const handleKeyDown = (e) => {
@@ -4907,6 +5025,25 @@ function Conversas({ state, addItem }) {
 
   const templates = ['Diagnóstico', 'Aprovação', 'Cobrança', 'Reativação']
 
+  const renderMessageActions = (msg) => (
+    <div className="msg-actions">
+      <button className="msg-action-trigger" onClick={() => setMessageMenuId(messageMenuId === msg.id ? '' : msg.id)} title="Opções da mensagem">
+        <MoreHorizontal size={14} />
+      </button>
+      {messageMenuId === msg.id && (
+        <div className="msg-action-menu">
+          {msg.from_me && msg.message_type === 'text' && !msg.deleted_for_all_at && (
+            <button onClick={() => startEditMessage(msg)}>Editar mensagem</button>
+          )}
+          <button onClick={() => deleteMessageForMe(msg)}>Excluir para mim</button>
+          {msg.from_me && msg.wa_message_id && !msg.deleted_for_all_at && (
+            <button className="danger-text" onClick={() => requestDeleteForEveryone(msg)}>Excluir para todos</button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   // Dados do contato no CRM (para o perfil)
   const crmInfo = selected
     ? (state.clients.find(c => c.name === selected.name || c.phone === selected.phone) ||
@@ -4984,6 +5121,7 @@ function Conversas({ state, addItem }) {
           <div className="chat-head-actions">
             {feedback && <span style={{fontSize:12, color:'var(--green)', padding:'0 8px'}}>{feedback}</span>}
             <button className="icon-btn" title="Copiar último" onClick={() => copyText(draft || messages.at(-1)?.content || '')}><Copy size={16} /></button>
+            <button className="icon-btn" title="Limpar conversa no DBE Flow" onClick={requestClearConversation} disabled={!selected?.remote_jid}><Trash2 size={16} /></button>
             <button className="icon-btn" title="Abrir no WhatsApp Web" onClick={() => selected && openWhatsApp(selected.phone, draft)}><MessageCircle size={16} /></button>
           </div>
         </header>
@@ -5006,9 +5144,11 @@ function Conversas({ state, addItem }) {
             if (msg.message_type === 'audio') {
               return (
                 <div key={msg.id || `${msg.ts}-${i}`} className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'} audio-bubble`}>
-                  {renderMedia(msg)}
+                  {msg.deleted_for_all_at ? <span className="msg-content deleted">Mensagem apagada</span> : renderMedia(msg)}
+                  {renderMessageActions(msg)}
                   <div className="msg-meta">
                     <span className="msg-time">{msg.ts ? new Date(msg.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                    {msg.edited_at && <span className="msg-edited">editada</span>}
                     {msg.from_me && <span className="msg-status">✓✓</span>}
                   </div>
                 </div>
@@ -5019,10 +5159,18 @@ function Conversas({ state, addItem }) {
                 key={msg.id || msg.wa_message_id || `${msg.ts}-${i}`}
                 className={`message-bubble ${msg.from_me ? 'outbound' : 'inbound'}`}
               >
-                {msg.content && <span className="msg-content">{msg.content}</span>}
-                {renderMedia(msg)}
+                {msg.deleted_for_all_at ? (
+                  <span className="msg-content deleted">{msg.deleted_by_remote ? 'Mensagem apagada no WhatsApp' : 'Mensagem apagada'}</span>
+                ) : (
+                  <>
+                    {msg.content && <span className="msg-content">{msg.content}</span>}
+                    {renderMedia(msg)}
+                  </>
+                )}
+                {renderMessageActions(msg)}
                 <div className="msg-meta">
                   <span className="msg-time">{msg.ts ? new Date(msg.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                  {msg.edited_at && <span className="msg-edited">{msg.edited_by_remote ? 'editada no WhatsApp' : 'editada'}</span>}
                   {msg.from_me && <span className="msg-status">✓✓</span>}
                 </div>
               </div>
@@ -5164,6 +5312,28 @@ function Conversas({ state, addItem }) {
           })()}
         </div>
       )}
+      <Modal title="Editar mensagem" open={!!editingMessage} onClose={() => { setEditingMessage(null); setEditDraft('') }}>
+        <div className="form-grid">
+          <label className="field span">
+            <span>Mensagem</span>
+            <textarea className="textarea" value={editDraft} onChange={(event) => setEditDraft(event.target.value)} rows={5} />
+          </label>
+        </div>
+        <p className="muted-note">A edição será enviada ao WhatsApp pela Evolution API e registrada no DBE Flow.</p>
+        <div className="button-row">
+          <button className="secondary" onClick={() => { setEditingMessage(null); setEditDraft('') }}>Cancelar</button>
+          <button className="primary" onClick={saveEditedMessage} disabled={!editDraft.trim()}><Check size={16} /> Salvar edição</button>
+        </div>
+      </Modal>
+      <ConfirmDialog
+        open={!!chatConfirm}
+        title={chatConfirm?.title}
+        message={chatConfirm?.message}
+        confirmLabel={chatConfirm?.confirmLabel}
+        cancelLabel="Cancelar"
+        onCancel={() => setChatConfirm(null)}
+        onConfirm={chatConfirm?.onConfirm}
+      />
     </section>
   )
 }
@@ -6249,7 +6419,7 @@ function ProducaoVideo({ state, updateItem }) {
   )
 }
 
-function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme }) {
+function Configuracoes({ state, currentUser, onProfileUpdate, onLogout, theme, setTheme }) {
   const [tab, setTab] = useState('perfil')
   const [name, setName] = useState(currentUser?.name || '')
   const [pass, setPass] = useState('')
@@ -6495,23 +6665,27 @@ function Configuracoes({ currentUser, onProfileUpdate, onLogout, theme, setTheme
         </div>
       )}
 
-      {tab === 'integracoes' && <Integracoes />}
+      {tab === 'integracoes' && <Integracoes state={state} currentUser={currentUser} />}
     </section>
   )
 }
 
-function Integracoes() {
+function Integracoes({ state, currentUser }) {
   const [waState, setWaState] = useState('—')
   const [qr, setQr] = useState('')
   const [waMsg, setWaMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [igAccounts, setIgAccounts] = useState(null)
   const [igMsg, setIgMsg] = useState('')
+  const [igClientId, setIgClientId] = useState(state?.clients?.[0]?.id || '')
+  const [igConnected, setIgConnected] = useState(null)
   const [driveConn, setDriveConn] = useState(null)
   const [driveMsg, setDriveMsg] = useState('')
+  const [logs, setLogs] = useState([])
 
   useEffect(() => {
     loadDriveIntegration().then(setDriveConn)
+    loadIntegrationLogs().then(setLogs)
     // Mostra feedback do callback OAuth se houver parâmetros na URL
     const params = new URLSearchParams(window.location.search)
     const ds = params.get('drive_status')
@@ -6539,6 +6713,49 @@ function Integracoes() {
     const res = await whatsapp.setWebhook(webhookUrl)
     setBusy(false)
     setWaMsg(res.ok ? `Webhook configurado: ${webhookUrl}` : `Erro ao configurar webhook: ${res.error}`)
+    loadIntegrationLogs().then(setLogs)
+  }
+  const disconnectWa = async () => {
+    setBusy(true); setWaMsg('')
+    const res = await whatsapp.disconnect()
+    setBusy(false)
+    if (res.ok) {
+      setWaState('close')
+      setQr('')
+      setWaMsg('WhatsApp desconectado da Evolution. As conversas salvas continuam no DBE Flow até você limpá-las.')
+      await addIntegrationLog({ integration: 'whatsapp', action: 'disconnect', status: 'success', message: 'WhatsApp desconectado da Evolution' })
+      loadIntegrationLogs().then(setLogs)
+    } else {
+      setWaMsg(`Erro ao desconectar: ${res.error}`)
+      await addIntegrationLog({ integration: 'whatsapp', action: 'disconnect', status: 'error', message: res.error })
+      loadIntegrationLogs().then(setLogs)
+    }
+  }
+  const disconnectDrive = async () => {
+    setDriveMsg('Desconectando...')
+    const res = await drive.disconnect()
+    if (res.ok) {
+      setDriveConn(null)
+      setDriveMsg('Google Drive desconectado do DBE Flow.')
+      loadIntegrationLogs().then(setLogs)
+    } else setDriveMsg(`Erro ao desconectar Drive: ${res.error}`)
+  }
+  const checkInstagramClient = async () => {
+    if (!igClientId) return
+    setIgMsg('Verificando conexão...')
+    const res = await meta.instagramStatus(igClientId, currentUser)
+    setIgConnected(res.ok ? res.integration : null)
+    setIgMsg(res.ok ? (res.integration ? 'Instagram conectado para este cliente.' : 'Instagram não conectado para este cliente.') : `Erro: ${res.error}`)
+  }
+  const disconnectInstagramClient = async () => {
+    if (!igClientId) return
+    setIgMsg('Desconectando Instagram...')
+    const res = await meta.disconnectInstagram(igClientId, currentUser)
+    if (res.ok) {
+      setIgConnected(null)
+      setIgMsg('Instagram desconectado deste cliente.')
+      loadIntegrationLogs().then(setLogs)
+    } else setIgMsg(`Erro ao desconectar Instagram: ${res.error}`)
   }
   const checkMeta = async () => {
     setIgMsg('Buscando contas...')
@@ -6576,6 +6793,7 @@ function Integracoes() {
               <p className="muted-note">Pasta raiz: <code>1-rHJ3bfsx4mvG6xXTpKiCtn1a1_R1Gg0</code></p>
               <div className="button-row" style={{ marginTop: 8 }}>
                 <button className="secondary" onClick={() => drive.startAuth()}><RefreshCw size={16} /> Reconectar</button>
+                <button className="secondary danger-text" onClick={disconnectDrive}><Trash2 size={16} /> Desconectar</button>
               </div>
             </>
           ) : (
@@ -6596,6 +6814,7 @@ function Integracoes() {
             <button className="secondary" onClick={checkWa} disabled={busy}><RefreshCw size={16} /> Verificar status</button>
             <button className="primary" onClick={connectWa} disabled={busy}><MessageCircle size={16} /> {busy ? 'Aguarde...' : 'Conectar / QR'}</button>
             <button className="secondary" onClick={configureWaWebhook} disabled={busy}>Configurar webhook</button>
+            <button className="secondary danger-text" onClick={disconnectWa} disabled={busy}><Trash2 size={16} /> Desconectar</button>
           </div>
           <p className="muted-note">Status atual: <strong>{waState}</strong></p>
           {waMsg && <p className="muted-note">{waMsg}</p>}
@@ -6604,8 +6823,18 @@ function Integracoes() {
       </div>
 
       <Panel title="Meta / Instagram">
-        <p className="muted-note">Lista as contas do Instagram disponíveis no token configurado.</p>
-        <button className="secondary" onClick={checkMeta}><Camera size={16} /> Buscar contas</button>
+        <p className="muted-note">Verifique ou desconecte a conta vinculada a um cliente.</p>
+        <div className="form-grid">
+          <Select label="Cliente" value={igClientId} onChange={setIgClientId} options={(state?.clients || []).map((client) => ({ label: client.name, value: client.id }))} />
+          <div className="button-row no-margin" style={{ alignSelf: 'end' }}>
+            <button className="secondary" onClick={checkInstagramClient}><RefreshCw size={16} /> Verificar</button>
+            <button className="secondary danger-text" onClick={disconnectInstagramClient} disabled={!igClientId}><Trash2 size={16} /> Desconectar</button>
+          </div>
+        </div>
+        {igConnected && <p className="muted-note">Conta vinculada: <strong>@{igConnected.instagram_username || igConnected.instagram_user_id}</strong>.</p>}
+        <div className="button-row compact">
+          <button className="secondary" onClick={checkMeta}><Camera size={16} /> Buscar contas do token antigo</button>
+        </div>
         {igMsg && <p className="muted-note">{igMsg}</p>}
         {igAccounts && (
           <div className="stack-list" style={{ marginTop: 12 }}>
@@ -6626,6 +6855,22 @@ function Integracoes() {
             ['OAUTH_STATE_SECRET', 'Gerar string aleatória e configurar na Netlify (segurança OAuth)'],
           ]}
         />
+      </Panel>
+
+      <Panel title="Logs de integração">
+        {logs.length ? (
+          <div className="integration-log-list">
+            {logs.map((log) => (
+              <article className="integration-log-row" key={log.id}>
+                <Badge text={log.integration} tone={log.status === 'error' ? 'danger' : log.status === 'success' ? 'success' : 'blue'} />
+                <div>
+                  <strong>{log.action}</strong>
+                  <span>{log.message || 'Sem detalhe'} · {dateTime(log.created_at)}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : <div className="empty-box">Nenhum log de integração registrado ainda.</div>}
       </Panel>
     </section>
   )

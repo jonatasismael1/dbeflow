@@ -34,12 +34,18 @@ export default async (req) => {
             enabled: true,
             url: webhookUrl,
             webhookByEvents: false,
-            events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'CONTACTS_UPSERT'],
+            events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'MESSAGES_DELETE', 'SEND_MESSAGE', 'CONNECTION_UPDATE', 'CONTACTS_UPSERT'],
           },
         }),
       })
       const data = await res.json().catch(() => ({}))
       return json({ ok: res.ok, data })
+    }
+
+    if (action === 'logout') {
+      const res = await fetch(`${URL}/instance/logout/${INSTANCE}`, { method: 'DELETE', headers })
+      const data = await res.json().catch(() => ({}))
+      return json({ ok: res.ok, state: 'close', data }, res.ok ? 200 : 502)
     }
 
     if (action === 'connect') {

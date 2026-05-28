@@ -2192,6 +2192,52 @@ td small {
   word-break: break-word;
 }
 
+.message-bubble:hover .msg-actions { opacity: 1; pointer-events: auto; }
+.msg-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+.message-bubble.inbound .msg-actions { right: auto; left: 4px; }
+.msg-action-trigger {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.msg-action-menu {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  z-index: 20;
+}
+.message-bubble.inbound .msg-action-menu { right: auto; left: 0; }
+.msg-action-menu button {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px 10px;
+  text-align: left;
+}
+.msg-action-menu button:hover { background: rgba(255,255,255,.06); }
+
 .message-bubble.inbound {
   align-self: flex-start;
   background: var(--surface-2);
@@ -2211,6 +2257,9 @@ td small {
   color: var(--text);
   white-space: pre-wrap;
 }
+
+.msg-content.deleted { color: var(--muted); font-style: italic; }
+.msg-edited { color: var(--soft); font-size: 10px; }
 
 .msg-meta {
   display: flex;
@@ -4058,6 +4107,34 @@ td small {
   cursor: pointer;
 }
 .client-tabs button.active { border-color: rgba(59,130,246,.5); color: var(--blue); background: rgba(59,130,246,.1); }
+.integration-log-list { display: grid; gap: 8px; }
+.integration-log-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 10px 12px;
+}
+.integration-log-row strong { display: block; font-size: 13px; }
+.integration-log-row span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.cal-agenda-list { display: grid; gap: 8px; }
+.cal-agenda-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.cal-agenda-row strong { display: block; font-size: 13px; }
+.cal-agenda-row span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 @media (max-width: 720px) {
   .approval-link-box { grid-template-columns: 1fr; }

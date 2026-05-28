@@ -32,8 +32,11 @@ export const whatsapp = {
     call('whatsapp-send', { phone, mediaBase64, fileName, caption }),
   status: () => call('whatsapp-connect', { action: 'status' }),
   connect: () => call('whatsapp-connect', { action: 'connect' }),
+  disconnect: () => call('whatsapp-connect', { action: 'logout' }),
   setWebhook: (webhookUrl) => call('whatsapp-connect', { action: 'set_webhook', webhookUrl }),
   syncContacts: () => call('whatsapp-sync-contacts'),
+  deleteMessageForEveryone: (message) => call('whatsapp-message-action', { action: 'delete_for_everyone', message }),
+  editMessage: (message, text) => call('whatsapp-message-action', { action: 'edit', message, text }),
 }
 
 // --- Contratos ---
@@ -61,6 +64,8 @@ export const ai = {
 export const drive = {
   // Redireciona o browser para a tela de autorização OAuth do Google
   startAuth: () => { window.location.href = '/.netlify/functions/google-drive-auth' },
+
+  disconnect: () => call('disconnect-drive'),
 
   createClientFolder: (clientId, clientName) =>
     call('drive-create-client-folder', { clientId, clientName }),
